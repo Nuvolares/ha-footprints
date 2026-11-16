@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.0
+
+- Routes: show the trips between places as lines with arrows for the
+  direction of travel. Optionally snapped to the streets (`snap_to_roads`).
+- Map types: Home Assistant map, OpenStreetMap, satellite and topographic.
+- Look at a single day and step through the days.
+- New `users` option: choose which Home Assistant users can open Footprints,
+  and whose history each of them can see.
+- App icon and logo.
+
 ## 0.1.3
 
 - Use Home Assistant's own map (the same one as its Map dashboard) instead of

@@ -4,7 +4,8 @@ Footprints records where the people in your home have been and shows it on a
 map in the side panel. Every place gets a dot in that person's color. A place
 visited once is barely visible; the more often someone goes back, the more
 solid the dot becomes. Home, work and the gym stand out, and one-off trips stay
-faint.
+faint. Routes between places can be shown as lines, with arrows for the
+direction of travel.
 
 ## How it works
 
@@ -20,12 +21,20 @@ faint.
 - Locations are grouped into a grid (50 m by default). A **visit** is counted
   each time a person arrives at a spot they haven't been at for 30 minutes, so
   GPS jitter doesn't count as coming back.
+- A **trip** is the movement between two stops. A stop is staying within 80 m
+  for 5 minutes or more; a silence of more than 30 minutes also ends a trip.
 
 ## Using the map
 
 - **People**: show or hide each person. The round picture is where they are
   now.
-- **Time range**: last 7 days, 30 days, 90 days, year, or all time.
+- **Time**: one **Day** (with arrows to step through the days), the last 7 or
+  30 days, the last year, or all time.
+- **Routes**: shows the trips as lines in the person's color, with small arrows
+  pointing the way they went. Select a line to see when the trip started and
+  ended, how long it was, and how far. Dashed lines connect the recorded
+  points directly; solid lines follow the streets (see *Routes along the
+  streets*). With long time ranges, the latest 300 trips are shown.
 - **Shade places by**: *Visits* (how often they went there) or *Time spent*
   (how long they were there in total).
 - **Solid after**: how many visits (or hours) it takes for a dot to become
@@ -34,22 +43,70 @@ faint.
   only drove through and show only places where they stopped.
 - **Spot size**: how close two positions must be to count as the same place.
   Use a larger size when looking at a whole country.
+- **Map**: the background map. *Home Assistant map* is the same one as the Map
+  dashboard. *OpenStreetMap*, *Satellite* (Esri World Imagery) and
+  *Topographic* (OpenTopoMap) come straight from those services. A *Custom*
+  choice appears when you set `tile_url`.
 - **Most visited**: the top places; select one to zoom in.
-- Select a dot to see the number of visits, the total time spent there, and
-  the first and last time.
+
+## Routes along the streets
+
+Recorded points are often minutes apart, so a straight line between them cuts
+through buildings. With `snap_to_roads` turned on, Footprints asks an OSRM
+routing server for the streets and paths that best match each trip, picking
+car, bike or walking routes from the trip's speed. Each trip is sent once and
+the result is stored, so the map stays fast.
+
+This sends the trip's coordinates and times (no names, no entity IDs) to the
+routing server. The default is the free server run by FOSSGIS
+(`routing.openstreetmap.de`), which allows light personal use. To keep
+everything at home, run your own [OSRM](https://github.com/Project-OSRM/osrm-backend)
+server and set `routing_url` to it, for example `http://192.168.1.20:5000`.
+
+## Who can see it
+
+Location history is sensitive, so access is limited in two ways:
+
+1. Only Home Assistant **administrators** get the Footprints entry in the side
+   panel; other users don't see it and can't open it.
+2. With the `users` option, only the listed administrators can open it, and
+   each can be limited to certain people. Everyone else gets a "No access"
+   page.
+
+```yaml
+users:
+  - username: daniel      # sees everyone
+    people: []
+  - username: alex        # sees only their own history
+    people:
+      - person.alex
+```
+
+Use the **username** (the login name, under Settings → People → Users), not
+the display name: users can change their own display name, but not their
+username. Only users who can see everyone can delete history.
+
+Home Assistant doesn't offer a per-user setting for an app's side panel
+entry, so an administrator who isn't listed still sees the Footprints entry,
+but gets "No access" when opening it. They can hide the entry from their own
+sidebar under their profile → *Change the order and hide items from the
+sidebar*.
 
 ## Options
 
 | Option | Default | What it does |
 |---|---|---|
 | `entities` | empty | Entity IDs to record (`person.*` or `device_tracker.*`). Empty means every person. |
+| `users` | empty | Who can open Footprints and whom they see (see above). Empty means every administrator, seeing everyone. |
 | `min_distance_m` | 20 | Skip updates closer than this to the last stored point (unless 15 minutes have passed). |
 | `max_accuracy_m` | 200 | Ignore GPS fixes less accurate than this. |
 | `import_days` | 3650 | How far back to import from the recorder. |
 | `keep_days` | 0 | Delete points older than this. 0 keeps everything. |
 | `cell_size_m` | 50 | Default spot size on the map. |
-| `map_style` | auto | `auto` (follows light/dark mode), `light` or `dark`. The map comes from Home Assistant itself, the same one its Map dashboard uses; dark mode darkens it. `osm` is the same as `light`. |
+| `map_style` | auto | `auto` (follows light/dark mode), `light` or `dark`. Dark mode darkens the Home Assistant and OpenStreetMap maps. `osm` is the same as `light`. |
 | `tile_url` | — | Optional custom tile server, for example `https://tile.example.com/{z}/{x}/{y}.png`. |
+| `snap_to_roads` | false | Draw routes along streets using the routing server. |
+| `routing_url` | FOSSGIS | OSRM server; `{profile}` becomes `car`, `bike` or `foot`. |
 | `log_level` | info | How much detail the app writes to its log. |
 
 ## Tips
@@ -57,6 +114,8 @@ faint.
 - Location only gets recorded when Home Assistant knows it. The Home Assistant
   Companion app on each phone is the usual source. Router or Bluetooth based
   trackers only report home/away, not coordinates.
+- Routes look better with more frequent location updates. In the Companion
+  app, the location sensor settings control how often the phone reports.
 - To keep more history from before you installed the app, raise
   `purge_keep_days` of the recorder. Footprints imports whatever is there on
   first start.
@@ -65,12 +124,11 @@ faint.
 
 ## Privacy
 
-Location history is personal. Everything stays on your Home Assistant: the
-points are stored in the app's `/data` folder and are only reachable through
-Home Assistant's own login. The map background comes through Home Assistant's
-built-in map service, the same one its Map dashboard uses (or from your own
-tile server if you set `tile_url`). The map service sees which area is being
-viewed, but never receives the recorded locations.
+Everything stays on your Home Assistant: the points are stored in the app's
+`/data` folder and are only reachable through Home Assistant's own login. The
+map background is loaded from the map service you pick; it sees which area is
+being viewed, but never receives the recorded locations. Only with
+`snap_to_roads` turned on are trip coordinates sent to the routing server.
 
 To delete one person's recorded history, hover over their name in the People
 list and select the trash icon. Uninstalling the app removes all of it. If the

@@ -4,6 +4,14 @@ configuration:
     description: >-
       Entity IDs to record, for example person.alex or
       device_tracker.alex_phone. Leave empty to record every person.
+  users:
+    name: Who can open Footprints
+    description: >-
+      Home Assistant usernames (the login name, not the display name) allowed
+      to open the app, each with the people they may see. An empty people
+      list means everyone. Leave the whole list empty to let every
+      administrator in. Example: username daniel, people [] and username
+      alex, people [person.alex].
   min_distance_m:
     name: Minimum movement (m)
     description: >-
@@ -28,16 +36,28 @@ configuration:
       Locations within this grid size count as the same place. Can be changed
       on the map.
   map_style:
-    name: Map style
+    name: Light or dark map
     description: >-
-      auto follows your device's light or dark mode. The map comes from Home
-      Assistant itself (the same one as its Map dashboard); dark mode shows a
-      darkened version of it. osm is the same as light.
+      auto follows your device's light or dark mode. Dark mode darkens the
+      Home Assistant and OpenStreetMap maps. osm is the same as light. The
+      map type itself is picked on the map.
   tile_url:
     name: Custom tile URL
     description: >-
       Optional. A tile server URL such as https://tile.example.com/{z}/{x}/{y}.png.
-      Overrides the map style.
+      Adds a "Custom" choice to the map types.
+  snap_to_roads:
+    name: Snap routes to streets
+    description: >-
+      Draw routes along the actual streets and paths instead of straight
+      lines. This sends each trip's coordinates and times (no names) once to
+      the routing server below.
+  routing_url:
+    name: Routing server
+    description: >-
+      OSRM server used to snap routes to streets. {profile} is replaced with
+      car, bike or foot. The default is the free FOSSGIS server; point it at
+      your own OSRM server to keep everything at home.
   log_level:
     name: Log level
     description: How much detail the app writes to its log.

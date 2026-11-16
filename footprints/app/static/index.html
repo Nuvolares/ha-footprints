@@ -25,14 +25,33 @@
       </section>
 
       <section>
-        <h2>Time range</h2>
+        <h2>Time</h2>
         <div class="seg" id="range" role="radiogroup" aria-label="Time range">
+          <button type="button" data-v="day">Day</button>
           <button type="button" data-v="7d">7 d</button>
           <button type="button" data-v="30d">30 d</button>
-          <button type="button" data-v="90d">90 d</button>
           <button type="button" data-v="1y">1 y</button>
           <button type="button" data-v="all">All</button>
         </div>
+        <div class="day-row" id="day-row" hidden>
+          <button id="day-prev" class="icon-btn" type="button" aria-label="Previous day">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M15 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <input id="day" type="date" aria-label="Day">
+          <button id="day-next" class="icon-btn" type="button" aria-label="Next day">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+      </section>
+
+      <section>
+        <h2>Routes</h2>
+        <label class="switch">
+          <input id="routes" type="checkbox">
+          <span class="track" aria-hidden="true"></span>
+          <span>Show the routes between places, with direction</span>
+        </label>
+        <p id="routes-note" class="note" hidden></p>
       </section>
 
       <section>
@@ -74,6 +93,13 @@
       </section>
 
       <section>
+        <label class="field">
+          <span>Map</span>
+          <select id="basemap"></select>
+        </label>
+      </section>
+
+      <section>
         <h2>Most visited</h2>
         <ol id="top" class="top"></ol>
       </section>
@@ -81,6 +107,10 @@
       <p id="status" class="status" role="status"></p>
     </div>
   </aside>
+
+  <div id="denied" class="denied" hidden>
+    <div><h1>No access</h1><p>Your Home Assistant user isn't allowed to see Footprints. An administrator can add you under <b>users</b> in the app's options.</p></div>
+  </div>
 
   <script src="static/vendor/leaflet.js"></script>
   <script src="static/app.js"></script>

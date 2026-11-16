@@ -1,4 +1,5 @@
 """Location history storage (SQLite) and the visit aggregation behind the map."""
+import json
 import math
 import sqlite3
 import threading
@@ -57,6 +58,14 @@ class Store:
                     PRIMARY KEY (entity_id, ts)
                 ) WITHOUT ROWID;
                 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
+                CREATE TABLE IF NOT EXISTS routes(
+                    entity_id TEXT NOT NULL,
+                    start_ts REAL NOT NULL,
+                    end_ts REAL NOT NULL,
+                    n INTEGER NOT NULL,
+                    geometry TEXT,
+                    PRIMARY KEY (entity_id, start_ts)
+                ) WITHOUT ROWID;
                 """
             )
         self.revision: dict[str, int] = {}
@@ -80,6 +89,7 @@ class Store:
     def purge_before(self, ts: float) -> int:
         with self.lock:
             cur = self.db.execute("DELETE FROM points WHERE ts < ?", (ts,))
+            self.db.execute("DELETE FROM routes WHERE start_ts < ?", (ts,))
             self.db.commit()
         if cur.rowcount:
             self.revision = {k: v + 1 for k, v in self.revision.items()}
@@ -88,6 +98,7 @@ class Store:
     def delete_entity(self, entity_id: str) -> int:
         with self.lock:
             cur = self.db.execute("DELETE FROM points WHERE entity_id = ?", (entity_id,))
+            self.db.execute("DELETE FROM routes WHERE entity_id = ?", (entity_id,))
             # Keep the "imported" marker and mark the deletion, so a restart doesn't pull the
             # deleted history back in from the recorder.
             self.db.execute("INSERT OR REPLACE INTO meta VALUES (?, ?)", (f"imported:{entity_id}", str(time.time())))
@@ -119,6 +130,73 @@ class Store:
                 "SELECT entity_id, COUNT(*), MIN(ts), MAX(ts) FROM points GROUP BY entity_id"
             ).fetchall()
         return {r[0]: {"points": r[1], "first": r[2], "last": r[3]} for r in rows}
+
+    # --- trips (the lines between the dots) ------------------------------------
+
+    def trips(self, entity_id: str, start: float, end: float, max_trips: int = 300) -> tuple[list[dict], bool]:
+        """Split the points into trips: runs of movement between two stops.
+
+        A trip ends when the person stays within STOP_RADIUS for STOP_TIME, or when the tracker
+        is silent for longer than TRIP_GAP. Returns the most recent `max_trips` trips (oldest
+        first) and whether older ones were left out.
+        """
+        TRIP_GAP, STOP_RADIUS, STOP_TIME, MIN_LENGTH = 30 * 60, 80.0, 5 * 60, 250.0
+        with self.lock:
+            rows = self.db.execute(
+                "SELECT ts, lat, lon, acc FROM points WHERE entity_id = ? AND ts >= ? AND ts < ? ORDER BY ts",
+                (entity_id, start, end),
+            ).fetchall()
+
+        trips: list[dict] = []
+
+        def close(points: list) -> None:
+            if len(points) < 2:
+                return
+            length = sum(distance_m(a[1], a[2], b[1], b[2]) for a, b in zip(points, points[1:]))
+            if length >= MIN_LENGTH:
+                trips.append({"start": points[0][0], "end": points[-1][0], "dist": round(length), "points": points})
+
+        cur: list = []
+        still = 0  # index in cur of the point the person may be standing still at
+        for p in rows:
+            if cur and p[0] - cur[-1][0] > TRIP_GAP:
+                close(cur)
+                cur, still = [], 0
+            cur.append(p)
+            if len(cur) == 1:
+                continue
+            anchor = cur[still]
+            if distance_m(anchor[1], anchor[2], p[1], p[2]) <= STOP_RADIUS:
+                if p[0] - anchor[0] >= STOP_TIME:
+                    # Stopped: the trip ended where they started standing still.
+                    close(cur[: still + 1])
+                    cur, still = [p], 0
+            else:
+                still = len(cur) - 1
+        close(cur)
+
+        truncated = len(trips) > max_trips
+        return trips[-max_trips:], truncated
+
+    def route_geometry(self, entity_id: str, trip: dict) -> tuple[bool, list | None]:
+        """(known, geometry) for a trip that was snapped to roads before. known=False: not tried yet."""
+        with self.lock:
+            row = self.db.execute(
+                "SELECT end_ts, n, geometry FROM routes WHERE entity_id = ? AND start_ts = ?",
+                (entity_id, trip["start"]),
+            ).fetchone()
+        if not row or row[0] != trip["end"] or row[1] != len(trip["points"]):
+            return False, None  # never matched, or the trip grew since (it was still going on)
+        return True, (json.loads(row[2]) if row[2] else None)
+
+    def save_route(self, entity_id: str, trip: dict, geometry: list | None) -> None:
+        with self.lock:
+            self.db.execute(
+                "INSERT OR REPLACE INTO routes VALUES (?, ?, ?, ?, ?)",
+                (entity_id, trip["start"], trip["end"], len(trip["points"]),
+                 json.dumps(geometry, separators=(",", ":")) if geometry else None),
+            )
+            self.db.commit()
 
     def cells(self, entity_id: str, start: float, end: float | None, cell_m: float,
               min_away_s: float, min_stay_s: float) -> list[dict]:

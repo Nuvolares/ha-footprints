@@ -4,10 +4,13 @@
 
   const COLORS = ["#e8590c", "#1c7ed6", "#2f9e44", "#ae3ec9", "#e03131", "#0c8599", "#f08c00", "#5f3dc4"];
   const MIN_ALPHA = 0.07; // a place visited once: barely there
+  const ARROW_SPACING = 90; // px between direction arrows along a route
+  const MAX_ARROWS = 2500;
   const SCALE = {
     visits: { max: 200, unit: (n) => (n === 1 ? "1 visit" : `${n} visits`), short: (n) => `${n}+` },
     time: { max: 500, unit: (n) => (n === 1 ? "1 hour" : `${n} hours`), short: (n) => `${n} h+` },
   };
+  const RANGES = ["day", "7d", "30d", "1y", "all"];
 
   const $ = (id) => document.getElementById(id);
   const store = {
@@ -15,16 +18,27 @@
     set(k, v) { try { localStorage.setItem("fp." + k, JSON.stringify(v)); } catch { /* private mode */ } },
   };
 
+  const todayIso = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  };
+
   const state = {
+    cfg: {},
     people: [],
     hidden: new Set(store.get("hidden", [])),
-    range: store.get("range", "all"),
+    range: RANGES.includes(store.get("range", "all")) ? store.get("range", "all") : "all",
+    day: todayIso(),
     mode: store.get("mode", "visits"),
     sat: store.get("sat", { visits: 20, time: 24 }),
     stay: store.get("stay", 0),
     cell: store.get("cell", null),
+    basemap: store.get("basemap", "ha"),
+    showRoutes: store.get("routes", false),
     cells: {},        // entity_id -> cells from the server
+    trips: {},        // entity_id -> trips from the server
     layers: {},       // entity_id -> L.LayerGroup of dots
+    routeLayers: {},  // entity_id -> L.LayerGroup of route lines
     nowMarkers: {},   // entity_id -> L.Marker
     fitted: false,
   };
@@ -34,14 +48,42 @@
   const dark = matchMedia("(prefers-color-scheme: dark)");
   const map = L.map("map", { zoomControl: false, preferCanvas: true, worldCopyJump: true }).setView([30, 0], 2);
   L.control.zoom({ position: "topright" }).addTo(map);
+  map.createPane("routes").style.zIndex = 390; // under the dots
   const renderer = L.canvas({ padding: 0.5 });
+  const routeRenderer = L.canvas({ padding: 0.5, pane: "routes" });
+  const arrowLayer = L.layerGroup().addTo(map);
   let tiles = null;
 
-  // The same map Home Assistant's own Map dashboard shows: core serves the tiles at
-  // /api/map_tiles (same origin as this page, which runs inside Home Assistant) and
-  // hands out a short-lived token through the "map_tiles/access_token" command.
   const OSM_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
-  const HA_TILES = "/api/map_tiles/raster/{z}/{x}/{y}.png?token={token}";
+
+  // Home Assistant's own map: core serves the tiles at /api/map_tiles (same origin as this page,
+  // which runs inside Home Assistant) with a short-lived token from "map_tiles/access_token".
+  const BASEMAPS = {
+    ha: { label: "Home Assistant map", darkable: true, make: () => haTileLayer() },
+    osm: {
+      label: "OpenStreetMap", darkable: true,
+      make: () => L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19, attribution: OSM_ATTRIBUTION, referrerPolicy: "origin",
+      }),
+    },
+    satellite: {
+      label: "Satellite", darkable: false,
+      make: () => L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
+        maxZoom: 19, attribution: "Imagery &copy; Esri, Maxar, Earthstar Geographics",
+      }),
+    },
+    topo: {
+      label: "Topographic", darkable: false,
+      make: () => L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png", {
+        maxZoom: 17, subdomains: "abc", referrerPolicy: "origin",
+        attribution: `${OSM_ATTRIBUTION}, SRTM | &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (CC-BY-SA)`,
+      }),
+    },
+    custom: {
+      label: "Custom (from options)", darkable: false,
+      make: () => L.tileLayer(state.cfg.tile_url, { maxZoom: 19, attribution: OSM_ATTRIBUTION }),
+    },
+  };
 
   async function mapToken() {
     // Ask through the signed-in user's own Home Assistant connection (the parent page)...
@@ -59,7 +101,7 @@
   }
 
   async function haTileLayer() {
-    const layer = L.tileLayer(HA_TILES, {
+    const layer = L.tileLayer("/api/map_tiles/raster/{z}/{x}/{y}.png?token={token}", {
       token: await mapToken(), maxZoom: 20, maxNativeZoom: 19, attribution: OSM_ATTRIBUTION,
     });
     let lastRefresh = Date.now();
@@ -76,27 +118,24 @@
     return layer;
   }
 
-  async function setTiles(cfg) {
+  function applyDarkTiles() {
+    const style = state.cfg.map_style;
+    const isDark = BASEMAPS[state.basemap].darkable && (style === "dark" || (style === "auto" && dark.matches));
+    map.getContainer().classList.toggle("dark-tiles", isDark);
+  }
+
+  async function setTiles() {
+    if (state.cfg.demo && state.basemap === "ha") state.basemap = "osm"; // no Home Assistant to ask
     let layer;
-    if (cfg.tile_url) {
-      layer = L.tileLayer(cfg.tile_url, { maxZoom: 19, attribution: OSM_ATTRIBUTION });
-    } else if (cfg.demo) {
-      layer = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        maxZoom: 19, attribution: OSM_ATTRIBUTION, referrerPolicy: "origin",
-      });
-    } else {
-      try {
-        layer = await haTileLayer();
-      } catch (err) {
-        setStatus(`Could not load the map from Home Assistant: ${err.message}`, true);
-        return;
-      }
+    try {
+      layer = await BASEMAPS[state.basemap].make();
+    } catch (err) {
+      setStatus(`Could not load the map: ${err.message}`, true);
+      return;
     }
     if (tiles) map.removeLayer(tiles);
     tiles = layer.addTo(map);
-    // The tiles are light; dark mode darkens them, like Home Assistant's dark map.
-    const isDark = !cfg.tile_url && (cfg.map_style === "dark" || (cfg.map_style === "auto" && dark.matches));
-    map.getContainer().classList.toggle("dark-tiles", isDark);
+    applyDarkTiles();
   }
 
   function radiusPx(lat) {
@@ -151,6 +190,10 @@
     return d.toLocaleDateString([], { year: "numeric", month: "short", day: "numeric" });
   }
 
+  const clock = (ts) => new Date(ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const dayName = (ts) => new Date(ts * 1000).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+  const km = (m) => (m < 1000 ? `${m} m` : `${(m / 1000).toFixed(m < 10000 ? 1 : 0)} km`);
+
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   const initials = (name) => name.split(/\s+/).map((w) => w[0] || "").join("").slice(0, 2).toUpperCase();
 
@@ -165,7 +208,13 @@
       `<span class="pop-meta">First ${when(c.first)} · last ${when(c.last)}</span>`;
   }
 
-  // --- drawing -----------------------------------------------------------------
+  function tripHtml(p, t) {
+    return `<b>${esc(p.name)}</b> · ${esc(dayName(t.start))}<br>` +
+      `${clock(t.start)} → ${clock(t.end)} · ${km(t.dist)} · ${duration(t.end - t.start)}<br>` +
+      `<span class="pop-meta">${t.snapped ? "Following the streets" : "Straight lines between recorded points"}</span>`;
+  }
+
+  // --- drawing: dots -----------------------------------------------------------
 
   function draw(entity) {
     const p = state.people.find((x) => x.entity_id === entity);
@@ -174,10 +223,8 @@
     if (!p || state.hidden.has(entity)) return;
     const group = L.layerGroup();
     for (const c of state.cells[entity] || []) {
-      const a = alpha(metric(c));
-      if (a <= 0) continue;
       const dot = L.circleMarker([c.lat, c.lon], {
-        renderer, radius: radiusPx(c.lat), stroke: false, fillColor: p.color, fillOpacity: a,
+        renderer, radius: radiusPx(c.lat), stroke: false, fillColor: p.color, fillOpacity: alpha(metric(c)),
       });
       dot.bindPopup(() => popupHtml(p, c));
       group.addLayer(dot);
@@ -186,18 +233,87 @@
     state.layers[entity] = group;
   }
 
+  // --- drawing: routes ---------------------------------------------------------
+
+  function drawRoutes(entity) {
+    const p = state.people.find((x) => x.entity_id === entity);
+    if (state.routeLayers[entity]) map.removeLayer(state.routeLayers[entity]);
+    delete state.routeLayers[entity];
+    if (!p || !state.showRoutes || state.hidden.has(entity)) return;
+    const group = L.layerGroup();
+    for (const t of state.trips[entity] || []) {
+      const line = L.polyline(t.line, {
+        renderer: routeRenderer, color: p.color, weight: 3.5, opacity: 0.8,
+        dashArray: t.snapped ? null : "6 6", lineCap: "round", lineJoin: "round",
+      });
+      line.bindPopup(() => tripHtml(p, t));
+      line.color = p.color;
+      group.addLayer(line);
+    }
+    group.addTo(map);
+    state.routeLayers[entity] = group;
+  }
+
+  // Small chevrons along each visible route, pointing the way the person went.
+  function drawArrows() {
+    arrowLayer.clearLayers();
+    if (!state.showRoutes) return;
+    const view = map.getBounds().pad(0.1);
+    let count = 0;
+    for (const group of Object.values(state.routeLayers)) {
+      group.eachLayer((line) => {
+        if (count >= MAX_ARROWS || !view.intersects(line.getBounds())) return;
+        const pts = line.getLatLngs().map((ll) => map.latLngToLayerPoint(ll));
+        let next = ARROW_SPACING / 2;
+        for (let i = 1; i < pts.length && count < MAX_ARROWS; i++) {
+          const a = pts[i - 1];
+          const b = pts[i];
+          const len = a.distanceTo(b);
+          if (len === 0) continue;
+          const ux = (b.x - a.x) / len;
+          const uy = (b.y - a.y) / len;
+          while (next <= len && count < MAX_ARROWS) {
+            const x = a.x + ux * next;
+            const y = a.y + uy * next;
+            const tip = L.point(x + ux * 4, y + uy * 4);
+            const w1 = L.point(x - ux * 4 - uy * 4.5, y - uy * 4 + ux * 4.5);
+            const w2 = L.point(x - ux * 4 + uy * 4.5, y - uy * 4 - ux * 4.5);
+            arrowLayer.addLayer(L.polyline([w1, tip, w2].map((pt) => map.layerPointToLatLng(pt)), {
+              renderer: routeRenderer, color: line.color, weight: 2.5, opacity: 1,
+              interactive: false, lineCap: "round", lineJoin: "round",
+            }));
+            count++;
+            next += ARROW_SPACING;
+          }
+          next -= len;
+        }
+      });
+    }
+  }
+
+  let arrowFrame = 0;
+  map.on("moveend", () => {
+    cancelAnimationFrame(arrowFrame);
+    arrowFrame = requestAnimationFrame(drawArrows);
+  });
+
+  // --- drawing: everything -----------------------------------------------------
+
   function redrawAll() {
-    for (const p of state.people) draw(p.entity_id);
+    for (const p of state.people) {
+      drawRoutes(p.entity_id);
+      draw(p.entity_id);
+    }
+    drawArrows();
     drawNow();
     renderTop();
   }
 
-  function resize() {
+  map.on("zoomend", () => {
     for (const group of Object.values(state.layers)) {
       group.eachLayer((dot) => dot.setRadius(radiusPx(dot.getLatLng().lat)));
     }
-  }
-  map.on("zoomend", resize);
+  });
 
   function drawNow() {
     for (const p of state.people) {
@@ -228,7 +344,7 @@
     const list = $("top");
     list.innerHTML = "";
     if (!all.length) {
-      list.innerHTML = '<li class="empty">No places recorded in this range yet.</li>';
+      list.innerHTML = '<li class="empty">No places recorded in this time yet.</li>';
       return;
     }
     for (const { p, c } of all.slice(0, 8)) {
@@ -250,9 +366,10 @@
     const pts = [];
     for (const p of state.people) {
       if (state.hidden.has(p.entity_id)) continue;
-      // Frame the places that matter, not the one-off holiday trip.
-      const cells = (state.cells[p.entity_id] || []).filter((c) => c.visits > 1);
-      for (const c of cells.length ? cells : state.cells[p.entity_id] || []) pts.push([c.lat, c.lon]);
+      const cells = state.cells[p.entity_id] || [];
+      // Frame the places that matter, not the one-off holiday trip (except when looking at one day).
+      const main = state.range === "day" ? cells : cells.filter((c) => c.visits > 1);
+      for (const c of main.length ? main : cells) pts.push([c.lat, c.lon]);
       if (!pts.length && typeof p.lat === "number") pts.push([p.lat, p.lon]);
     }
     if (!pts.length) return;
@@ -264,6 +381,10 @@
 
   async function getJson(url) {
     const res = await fetch(url, { cache: "no-store" });
+    if (res.status === 403) {
+      const body = await res.json().catch(() => ({}));
+      if (body.denied) { $("denied").hidden = false; throw new Error("access denied"); }
+    }
     if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
     return res.json();
   }
@@ -271,6 +392,14 @@
   function setStatus(text, err = false) {
     $("status").textContent = text;
     $("status").classList.toggle("err", err);
+  }
+
+  function windowQuery() {
+    if (state.range !== "day") return `range=${state.range}`;
+    const [y, m, d] = state.day.split("-").map(Number);
+    const start = new Date(y, m - 1, d); // local midnight
+    const end = new Date(y, m - 1, d + 1); // next local midnight (handles daylight saving)
+    return `start=${start.getTime() / 1000}&end=${end.getTime() / 1000}`;
   }
 
   async function loadPeople() {
@@ -287,32 +416,68 @@
     }
   }
 
-  async function loadCells(auto = false) {
-    const q = `range=${state.range}&cell=${state.cell}&min_stay=${state.stay}`;
-    const fresh = {};
+  let routesTimer = 0;
+
+  async function loadData(auto = false) {
+    const q = `${windowQuery()}&cell=${state.cell}&min_stay=${state.stay}`;
+    const cells = {};
+    const trips = {};
+    let pending = 0;
+    let truncated = false;
+    let routingError = null;
     await Promise.all(state.people.map(async (p) => {
-      const data = await getJson(`api/cells?entity=${encodeURIComponent(p.entity_id)}&${q}`);
-      fresh[p.entity_id] = data.cells;
+      const id = encodeURIComponent(p.entity_id);
+      const jobs = [getJson(`api/cells?entity=${id}&${q}`).then((d) => { cells[p.entity_id] = d.cells; })];
+      if (state.showRoutes) {
+        jobs.push(getJson(`api/routes?entity=${id}&${windowQuery()}`).then((d) => {
+          trips[p.entity_id] = d.trips;
+          pending += d.pending;
+          truncated = truncated || d.truncated;
+          routingError = routingError || d.routing_error;
+        }));
+      }
+      await Promise.all(jobs);
     }));
     // A background refresh must not close the popup someone is reading.
-    const popupOpen = !!document.querySelector(".leaflet-popup");
-    if (auto && popupOpen) {
+    if (auto && document.querySelector(".leaflet-popup")) {
       drawNow();
       return;
     }
-    state.cells = fresh;
+    state.cells = cells;
+    state.trips = trips;
     redrawAll();
     fitOnce();
+    updateRoutesNote(pending, truncated, routingError);
+    clearTimeout(routesTimer);
+    if (pending) routesTimer = setTimeout(() => loadData(true), 5000); // more streets are being matched
+  }
+
+  function updateRoutesNote(pending, truncated, routingError) {
+    const notes = [];
+    if (state.showRoutes) {
+      if (!state.cfg.snap_to_roads) {
+        notes.push("Dashed lines connect the recorded points directly. To follow the streets, turn on snap_to_roads in the app options.");
+      } else if (routingError) {
+        notes.push(`Matching to streets failed: ${routingError}. Showing straight lines for now.`);
+      } else if (pending) {
+        notes.push(`Matching ${pending} trip${pending === 1 ? "" : "s"} to the streets…`);
+      }
+      if (truncated) notes.push("Showing the latest 300 trips. Pick a shorter time to see older ones.");
+    }
+    $("routes-note").textContent = notes.join(" ");
+    $("routes-note").hidden = !notes.length;
   }
 
   async function refresh(auto = false) {
     try {
       await loadPeople();
-      await loadCells(auto);
+      await loadData(auto);
     } catch (err) {
-      setStatus(`Could not load data: ${err.message}`, true);
+      if (err.message !== "access denied") setStatus(`Could not load data: ${err.message}`, true);
     }
   }
+
+  const reload = () => loadData().catch((err) => setStatus(`Could not load data: ${err.message}`, true));
 
   // --- controls ----------------------------------------------------------------
 
@@ -327,7 +492,7 @@
         `<span class="who"><span class="name">${esc(p.name)}</span><br>` +
         `<span class="meta">${p.points ? `${p.points.toLocaleString()} points` : "nothing recorded yet"}</span></span>` +
         `<span class="check" aria-hidden="true"></span></label>` +
-        (p.points ? `<button type="button" class="icon-btn del" title="Delete ${esc(p.name)}'s history" aria-label="Delete ${esc(p.name)}'s history">` +
+        (p.points && state.cfg.can_delete ? `<button type="button" class="icon-btn del" title="Delete ${esc(p.name)}'s history" aria-label="Delete ${esc(p.name)}'s history">` +
           `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M5 7h14M10 11v6M14 11v6M6 7l1 12h10l1-12M9 7V4h6v3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>` : "");
       li.querySelector(".del")?.addEventListener("click", async () => {
         if (!confirm(`Delete all ${p.points.toLocaleString()} recorded locations of ${p.name}? This cannot be undone.`)) return;
@@ -343,7 +508,9 @@
         if (e.target.checked) state.hidden.delete(p.entity_id); else state.hidden.add(p.entity_id);
         store.set("hidden", [...state.hidden]);
         li.firstChild.classList.toggle("off", !e.target.checked);
+        drawRoutes(p.entity_id);
         draw(p.entity_id);
+        drawArrows();
         drawNow();
         renderTop();
       });
@@ -366,26 +533,71 @@
     sync();
   }
 
-  function initControls(cfg) {
+  function setDay(iso) {
+    state.day = iso > todayIso() ? todayIso() : iso;
+    $("day").value = state.day;
+    $("day-next").disabled = state.day >= todayIso();
+    state.fitted = false;
+    reload();
+  }
+
+  function shiftDay(delta) {
+    const [y, m, d] = state.day.split("-").map(Number);
+    const dt = new Date(y, m - 1, d + delta);
+    setDay(`${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`);
+  }
+
+  function initControls() {
+    const cfg = state.cfg;
     if (!state.cell) state.cell = cfg.cell_size_m;
     const cellSel = $("cell");
     if (![...cellSel.options].some((o) => +o.value === state.cell)) {
       cellSel.add(new Option(`${state.cell} m`, state.cell));
     }
     cellSel.value = state.cell;
-    cellSel.addEventListener("change", () => { state.cell = +cellSel.value; store.set("cell", state.cell); loadCells(); });
+    cellSel.addEventListener("change", () => { state.cell = +cellSel.value; store.set("cell", state.cell); reload(); });
 
     $("stay").value = state.stay;
-    $("stay").addEventListener("change", () => { state.stay = +$("stay").value; store.set("stay", state.stay); loadCells(); });
+    $("stay").addEventListener("change", () => { state.stay = +$("stay").value; store.set("stay", state.stay); reload(); });
 
-    segmented("range", () => state.range, (v) => { state.range = v; store.set("range", v); loadCells(); });
+    // Time: a named range, or one day.
+    const syncDayRow = () => { $("day-row").hidden = state.range !== "day"; };
+    segmented("range", () => state.range, (v) => {
+      state.range = v;
+      store.set("range", v);
+      syncDayRow();
+      if (v === "day") state.fitted = false;
+      reload();
+    });
+    syncDayRow();
+    $("day").max = todayIso();
+    $("day").value = state.day;
+    $("day-next").disabled = true;
+    $("day").addEventListener("change", () => { if ($("day").value) setDay($("day").value); });
+    $("day-prev").addEventListener("click", () => shiftDay(-1));
+    $("day-next").addEventListener("click", () => shiftDay(1));
+
+    // Routes.
+    $("routes").checked = state.showRoutes;
+    $("routes").addEventListener("change", () => {
+      state.showRoutes = $("routes").checked;
+      store.set("routes", state.showRoutes);
+      if (!state.showRoutes) {
+        for (const p of state.people) drawRoutes(p.entity_id);
+        drawArrows();
+        updateRoutesNote(0, false, null);
+      } else {
+        reload();
+      }
+    });
+
+    // Shading.
     segmented("mode", () => state.mode, (v) => {
       state.mode = v; store.set("mode", v);
       $("sat").value = satToSlider(state.sat[v]);
       updateLegend();
       redrawAll();
     });
-
     const sat = $("sat");
     sat.value = satToSlider(state.sat[state.mode]);
     let pending = 0;
@@ -400,6 +612,23 @@
     });
     updateLegend();
 
+    // Map type.
+    const basemap = $("basemap");
+    for (const [key, b] of Object.entries(BASEMAPS)) {
+      if (key === "custom" && !cfg.tile_url) continue;
+      if (key === "ha" && cfg.demo) continue;
+      basemap.add(new Option(b.label, key));
+    }
+    if (!BASEMAPS[state.basemap] || (state.basemap === "custom" && !cfg.tile_url)) state.basemap = cfg.tile_url ? "custom" : "ha";
+    if (cfg.demo && state.basemap === "ha") state.basemap = "osm";
+    basemap.value = state.basemap;
+    basemap.addEventListener("change", () => {
+      state.basemap = basemap.value;
+      store.set("basemap", state.basemap);
+      setTiles();
+    });
+
+    // Collapsible panel.
     const panel = $("panel");
     const btn = $("collapse");
     const setCollapsed = (c) => {
@@ -413,14 +642,16 @@
   }
 
   async function start() {
-    let cfg = { cell_size_m: 50, map_style: "auto", tile_url: "" };
-    try { cfg = await getJson("api/config"); } catch (err) { setStatus(`Could not load settings: ${err.message}`, true); }
-    setTiles(cfg);
-    dark.addEventListener("change", () => {
-      const isDark = !cfg.tile_url && (cfg.map_style === "dark" || (cfg.map_style === "auto" && dark.matches));
-      map.getContainer().classList.toggle("dark-tiles", isDark);
-    });
-    initControls(cfg);
+    try {
+      state.cfg = await getJson("api/config");
+    } catch (err) {
+      if (err.message === "access denied") return;
+      state.cfg = { cell_size_m: 50, map_style: "auto", tile_url: "", snap_to_roads: false, can_delete: false };
+      setStatus(`Could not load settings: ${err.message}`, true);
+    }
+    initControls();
+    setTiles();
+    dark.addEventListener("change", applyDarkTiles);
     await refresh();
     setInterval(() => { if (!document.hidden) refresh(true); }, 60000);
     document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(true); });

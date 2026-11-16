@@ -4,6 +4,8 @@ A Home Assistant app (formerly called an add-on) that shows every place the
 people in your home have been on a map in the side panel. Places visited once
 are faint; places they keep coming back to become more and more solid.
 
+![Footprints](footprints/logo.png)
+
 ## Install
 
 1. In Home Assistant, go to **Settings → Apps → Install app**.
