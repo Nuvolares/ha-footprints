@@ -1,0 +1,38 @@
+name: Footprints
+version: "0.1.0"
+slug: footprints
+description: >-
+  A map of every place the people in your home have been. Places they keep
+  coming back to show up solid; places visited once stay faint.
+url: https://github.com/Nuvolares/ha-footprints
+arch:
+  - amd64
+  - aarch64
+init: false
+startup: application
+boot: auto
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:map-marker-path
+panel_title: Footprints
+homeassistant_api: true
+options:
+  entities: []
+  min_distance_m: 20
+  max_accuracy_m: 200
+  import_days: 3650
+  keep_days: 0
+  cell_size_m: 50
+  map_style: auto
+  log_level: info
+schema:
+  entities:
+    - str
+  min_distance_m: int(0,1000)
+  max_accuracy_m: int(10,10000)
+  import_days: int(1,36500)
+  keep_days: int(0,36500)
+  cell_size_m: int(10,2000)
+  map_style: list(auto|light|dark|osm)
+  tile_url: str?
+  log_level: list(debug|info|warning|error)

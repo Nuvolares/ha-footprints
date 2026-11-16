@@ -1,0 +1,42 @@
+configuration:
+  entities:
+    name: People and trackers
+    description: >-
+      Entity IDs to record, for example person.alex or
+      device_tracker.alex_phone. Leave empty to record every person.
+  min_distance_m:
+    name: Minimum movement (m)
+    description: >-
+      Location updates closer than this to the last stored point are skipped,
+      unless 15 minutes have passed. Keeps the database small while standing
+      still.
+  max_accuracy_m:
+    name: Ignore inaccurate fixes (m)
+    description: >-
+      Location updates with a GPS accuracy worse than this are ignored.
+  import_days:
+    name: History import limit (days)
+    description: >-
+      How far back to import from the Home Assistant recorder. The recorder
+      only keeps 10 days by default; Footprints keeps everything from then on.
+  keep_days:
+    name: Keep history (days)
+    description: Delete points older than this. 0 keeps everything forever.
+  cell_size_m:
+    name: Default spot size (m)
+    description: >-
+      Locations within this grid size count as the same place. Can be changed
+      on the map.
+  map_style:
+    name: Map style
+    description: >-
+      auto follows your device's light or dark mode. osm uses the standard
+      OpenStreetMap tiles.
+  tile_url:
+    name: Custom tile URL
+    description: >-
+      Optional. A tile server URL such as https://tile.example.com/{z}/{x}/{y}.png.
+      Overrides the map style.
+  log_level:
+    name: Log level
+    description: How much detail the app writes to its log.
