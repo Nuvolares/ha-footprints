@@ -5,6 +5,7 @@ import logging
 import os
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 
 import aiohttp
 from aiohttp import web
@@ -141,7 +142,8 @@ async def api_config(request: web.Request) -> web.Response:
         "cell_size_m": opts["cell_size_m"],
         "map_style": opts["map_style"],
         "tile_url": opts["tile_url"],
-        "snap_to_roads": bool(opts["snap_to_roads"]),
+        "snap_to_roads": request.app["snap"],
+        "routing_host": urlparse(opts["routing_url"].replace("{profile}", "car")).hostname,
         "can_delete": request["people_allowed"] is None,
         "demo": DEMO,
     })
@@ -193,7 +195,7 @@ async def api_routes(request: web.Request) -> web.Response:
     out, pending = [], 0
     for trip in trips:
         line, snapped = None, False
-        if router:
+        if router and request.app["snap"]:
             line, waiting = router.lookup(entity, trip)  # quick, and it touches the asyncio queue
             pending += waiting
             snapped = line is not None
@@ -203,8 +205,24 @@ async def api_routes(request: web.Request) -> web.Response:
                     "snapped": snapped, "line": line})
     return web.json_response({
         "entity_id": entity, "trips": out, "truncated": truncated, "pending": pending,
-        "routing_error": router.last_error if router else None,
+        "routing_error": router.last_error if router and request.app["snap"] else None,
     })
+
+
+async def api_settings(request: web.Request) -> web.Response:
+    """Settings changed from the map. Only users who can see everyone may change them."""
+    if request["people_allowed"] is not None:
+        raise web.HTTPForbidden(text="only users who can see everyone can change settings")
+    try:
+        body = await request.json()
+    except ValueError:
+        raise web.HTTPBadRequest(text="expected JSON")
+    if "snap_to_roads" in body:
+        snap = bool(body["snap_to_roads"])
+        request.app["snap"] = snap
+        await asyncio.to_thread(request.app["store"].set_meta, "snap_to_roads", "1" if snap else "0")
+        log.info("Following the streets %s (changed on the map)", "on" if snap else "off")
+    return web.json_response({"snap_to_roads": request.app["snap"]})
 
 
 async def api_map_token(request: web.Request) -> web.Response:
@@ -241,10 +259,13 @@ async def retention(app: web.Application) -> None:
 async def on_startup(app: web.Application) -> None:
     app["http"] = aiohttp.ClientSession()
     app["tasks"] = [asyncio.create_task(retention(app))]
-    if app["opts"]["snap_to_roads"]:
-        app["router"] = Router(app["http"], app["store"], app["opts"]["routing_url"])
-        app["tasks"].append(asyncio.create_task(app["router"].run()))
-        log.info("Snapping trips to roads with %s", app["opts"]["routing_url"])
+    # The switch on the map wins over the option, once someone has used it.
+    saved = app["store"].get_meta("snap_to_roads")
+    app["snap"] = (saved == "1") if saved is not None else bool(app["opts"]["snap_to_roads"])
+    app["router"] = Router(app["http"], app["store"], app["opts"]["routing_url"])
+    app["tasks"].append(asyncio.create_task(app["router"].run()))
+    if app["snap"]:
+        log.info("Following the streets with %s", app["opts"]["routing_url"])
     if DEMO:
         await asyncio.to_thread(demo.seed, app["store"])
     else:
@@ -271,6 +292,7 @@ def main() -> None:
     app["store"] = Store(DATA_DIR / "footprints.db")
     app["ha"] = None
     app["router"] = None
+    app["snap"] = False
     if app["rules"]:
         log.info("Access limited to: %s", ", ".join(sorted(app["rules"])))
     app.router.add_get("/", index)
@@ -279,6 +301,7 @@ def main() -> None:
     app.router.add_get("/api/cells", api_cells)
     app.router.add_get("/api/routes", api_routes)
     app.router.add_get("/api/map_token", api_map_token)
+    app.router.add_post("/api/settings", api_settings)
     app.router.add_delete("/api/history/{entity}", api_delete)
     app.router.add_static("/static", STATIC_DIR)
     app.on_startup.append(on_startup)

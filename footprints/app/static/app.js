@@ -456,11 +456,11 @@
     const notes = [];
     if (state.showRoutes) {
       if (!state.cfg.snap_to_roads) {
-        notes.push("Dashed lines connect the recorded points directly. To follow the streets, turn on snap_to_roads in the app options.");
+        notes.push("Dashed lines connect the recorded points directly. Turn on Follow the streets to draw them along the roads.");
       } else if (routingError) {
         notes.push(`Matching to streets failed: ${routingError}. Showing straight lines for now.`);
       } else if (pending) {
-        notes.push(`Matching ${pending} trip${pending === 1 ? "" : "s"} to the streets…`);
+        notes.push(`Routing ${pending} trip${pending === 1 ? "" : "s"} along the streets… (about one per second)`);
       }
       if (truncated) notes.push("Showing the latest 300 trips. Pick a shorter time to see older ones.");
     }
@@ -578,10 +578,33 @@
     $("day-next").addEventListener("click", () => shiftDay(1));
 
     // Routes.
+    const syncSnapRow = () => { $("snap-row").hidden = !state.showRoutes; };
+    $("snap").checked = !!cfg.snap_to_roads;
+    $("snap").disabled = !cfg.can_delete;
+    $("snap-hint").textContent = cfg.can_delete
+      ? `Sends trip coordinates (no names) to ${cfg.routing_host || "the routing server"}`
+      : "Only users who can see everyone can change this";
+    $("snap").addEventListener("change", async () => {
+      const want = $("snap").checked;
+      try {
+        const res = await fetch("api/settings", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ snap_to_roads: want }),
+        });
+        if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+        state.cfg.snap_to_roads = (await res.json()).snap_to_roads;
+        reload();
+      } catch (err) {
+        $("snap").checked = !want;
+        setStatus(`Could not change the setting: ${err.message}`, true);
+      }
+    });
+    syncSnapRow();
     $("routes").checked = state.showRoutes;
     $("routes").addEventListener("change", () => {
       state.showRoutes = $("routes").checked;
       store.set("routes", state.showRoutes);
+      syncSnapRow();
       if (!state.showRoutes) {
         for (const p of state.people) drawRoutes(p.entity_id);
         drawArrows();

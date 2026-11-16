@@ -52,7 +52,9 @@ direction of travel.
 ## Routes along the streets
 
 Recorded points are often minutes apart, so a straight line between them cuts
-through buildings. With `snap_to_roads` turned on, Footprints works like a
+through buildings. Turn on **Follow the streets** under Routes on the map (or
+`snap_to_roads` in the options; the switch on the map wins once it has been
+used). Only users who can see everyone can change it. Footprints then works like a
 navigation system: it asks an OSRM routing server for the street route from
 each recorded point to the next, in order, picking car, bike or walking routes
 from the trip's speed. Points closer together than about a street block are

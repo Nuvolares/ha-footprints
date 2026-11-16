@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.2
+
+- New **Follow the streets** switch under Routes on the map, so routes can be
+  drawn along the roads without going to the app options or restarting.
+
 ## 0.2.1
 
 - Routes along the streets now work like a navigation system: the route is
