@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.1
+
+- The Configuration tab now points to the Settings gear in the app, which
+  lists Home Assistant's people, trackers and users to pick from.
+- The "No access" page explains how to hide Footprints from the sidebar.
+
 ## 0.4.0
 
 - **Settings** on the map (the gear at the top): pick who is recorded and who

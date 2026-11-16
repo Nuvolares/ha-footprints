@@ -1,17 +1,19 @@
 configuration:
   entities:
-    name: People and trackers
+    name: People and trackers (typed by hand; use the app's Settings instead)
     description: >-
-      Entity IDs to record, for example person.alex or
-      device_tracker.alex_phone. Leave empty to record every person.
+      Easier: open Footprints and select the gear at the top of the panel.
+      It lists every person and GPS tracker in Home Assistant to tick, and
+      replaces this field once saved. This tab can only take typed text:
+      entity IDs such as person.alex. Empty records every person.
   users:
-    name: Who can open Footprints
+    name: Who can open Footprints (typed by hand; use the app's Settings instead)
     description: >-
-      Home Assistant usernames (the login name, not the display name) allowed
-      to open the app, each with the people they may see. An empty people
-      list means everyone. Leave the whole list empty to let every
-      administrator in. Example: username daniel, people [] and username
-      alex, people [person.alex].
+      Easier: open Footprints and select the gear at the top of the panel.
+      It lists every Home Assistant user to pick from, and replaces this
+      field once saved. This tab can only take typed text: usernames (login
+      names) with the people each may see. Empty lets every administrator
+      in.
   min_distance_m:
     name: Minimum movement (m)
     description: >-

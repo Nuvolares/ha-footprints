@@ -117,7 +117,10 @@ body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--
 font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding:16px;box-sizing:border-box}
 main{max-width:420px;text-align:center}h1{font-size:18px;margin:0 0 8px}p{color:var(--muted);margin:0}</style>
 </head><body><main><h1>No access</h1><p>Your Home Assistant user isn't allowed to see Footprints.
-An administrator can give you access under Settings in Footprints.</p></main></body></html>"""
+An administrator can give you access under Settings in Footprints.</p>
+<p style="margin-top:12px;font-size:13px">To remove Footprints from your sidebar, select your
+name at the bottom of the sidebar, then <b>Change the order and hide items from the sidebar</b>.</p>
+</main></body></html>"""
 
 
 # --- requests ------------------------------------------------------------------
