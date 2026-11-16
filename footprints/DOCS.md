@@ -13,6 +13,9 @@ direction of travel.
   entity (or the entities you list in the options) and stores each position in
   its own database in `/data`. That database is included in Home Assistant
   backups.
+- Everything Footprints records is kept for good (unless you set
+  `keep_days`), no matter how long the Home Assistant recorder keeps its own
+  history. So the map keeps growing from the day you install it.
 - When it starts for the first time, it also imports everything the Home
   Assistant recorder still has. The recorder keeps 10 days by default, so the
   map starts with up to 10 days of history and grows from there. When the app
@@ -48,10 +51,11 @@ direction of travel.
 - **Solid after**: how many visits (or hours) it takes for a dot to become
   fully solid. Lower it to make regular places stand out sooner.
 - **Count a visit after**: set it to 5 minutes or more to hide streets they
-  only drove through and show only places where they stopped. Routes are
-  hidden while this is set, since they would still show where they drove;
-  set it back to *any stop* to see them again.
-- **Spot size**: how close two positions must be to count as the same place.
+  only drove through and show only places where they stopped.
+- **Dead ends are left out**: a point the person went out to and came
+  straight back from without stopping (a U-turn, or more often a GPS fix that
+  landed off the road) doesn't get a dot, and the line doesn't go there.
+  Points on the way somewhere else, and places where they stayed, are kept.- **Spot size**: how close two positions must be to count as the same place.
   Use a larger size when looking at a whole country.
 - **Map**: the background map. *Home Assistant map* is the same one as the Map
   dashboard. *OpenStreetMap*, *Satellite* (Esri World Imagery) and
@@ -90,9 +94,22 @@ Location history is sensitive, so access is limited in two ways:
 
 1. Only Home Assistant **administrators** get the Footprints entry in the side
    panel; other users don't see it and can't open it.
-2. With the `users` option, only the listed administrators can open it, and
-   each can be limited to certain people. Everyone else gets a "No access"
-   page.
+2. Under **Settings** (the gear at the top of the panel), pick for each
+   administrator: *Sees everyone*, *Sees only…* (tick the people), or *No
+   access*. The list comes straight from Home Assistant's users, so there's
+   nothing to type. Everyone set to *No access* gets a "No access" page. You
+   can't take away your own access to everyone, so you can't lock yourself
+   out. When every administrator is on *Sees everyone*, that also goes for
+   administrators added later; otherwise new users start with no access.
+
+The same Settings dialog picks **who is recorded**: every person (the
+default, which also includes people added later), or only the people and GPS
+device trackers you tick. History of someone newly ticked is imported from
+the recorder right away.
+
+Only users who can see everyone get the Settings gear. What is saved there
+replaces the `entities` and `users` options. Those options still work for
+setting things up without the map, by username:
 
 ```yaml
 users:
@@ -117,8 +134,8 @@ sidebar*.
 
 | Option | Default | What it does |
 |---|---|---|
-| `entities` | empty | Entity IDs to record (`person.*` or `device_tracker.*`). Empty means every person. |
-| `users` | empty | Who can open Footprints and whom they see (see above). Empty means every administrator, seeing everyone. |
+| `entities` | empty | Entity IDs to record (`person.*` or `device_tracker.*`). Empty means every person. Easier: Settings on the map, which wins once saved. |
+| `users` | empty | Who can open Footprints and whom they see (see above). Empty means every administrator, seeing everyone. Easier: Settings on the map, which wins once saved. |
 | `min_distance_m` | 20 | Skip updates closer than this to the last stored point (unless 15 minutes have passed). |
 | `max_accuracy_m` | 200 | Ignore GPS fixes less accurate than this. |
 | `import_days` | 3650 | How far back to import from the recorder. |

@@ -63,6 +63,50 @@ class HomeAssistant:
             return list(self.explicit)
         return sorted(e for e in self.states if e.startswith("person."))
 
+    def set_tracked(self, entities: list[str]) -> None:
+        """Change who is recorded, while running. Newly added ones get their history imported."""
+        self.explicit = list(entities)
+        log.info("Now tracking %s", ", ".join(self.tracked_entities()) or "nobody")
+        if self._ws and self.connected:
+            for eid in self.tracked_entities():
+                if eid in self.states:
+                    self.record(eid, self.states[eid])
+            if not self.importing:
+                asyncio.get_running_loop().create_task(self.import_history())
+
+    def trackers(self) -> list[dict]:
+        """Everything that can be recorded: every person, and device trackers that report GPS."""
+        out = []
+        for eid, st in self.states.items():
+            attrs = st.get("attributes") or {}
+            gps = isinstance(attrs.get("latitude"), (int, float))
+            if eid.startswith("person.") or (eid.startswith("device_tracker.") and gps):
+                out.append({
+                    "entity_id": eid,
+                    "name": attrs.get("friendly_name") or eid.split(".", 1)[-1].replace("_", " ").title(),
+                    "gps": gps,
+                })
+        out.sort(key=lambda t: (not t["entity_id"].startswith("person."), t["name"].lower()))
+        return out
+
+    async def users(self) -> list[dict]:
+        """Home Assistant's login users (not the system ones)."""
+        if not self._ws or not self.connected:
+            raise ConnectionError("not connected to Home Assistant")
+        result = await self.call({"type": "config/auth/list"}, timeout=20) or []
+        out = []
+        for u in result:
+            if u.get("system_generated") or not u.get("is_active", True):
+                continue
+            out.append({
+                "id": u.get("id"),
+                "username": u.get("username") or "",
+                "name": u.get("name") or u.get("username") or "Unnamed user",
+                "admin": "system-admin" in (u.get("group_ids") or []) or bool(u.get("is_owner")),
+            })
+        out.sort(key=lambda u: (not u["admin"], u["name"].lower()))
+        return out
+
     def point_from_state(self, state: dict) -> tuple[float, float, float, float | None] | None:
         attrs = state.get("attributes") or state.get("a") or {}
         lat, lon = attrs.get("latitude"), attrs.get("longitude")

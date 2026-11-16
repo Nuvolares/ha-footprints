@@ -13,9 +13,14 @@
   <aside id="panel" class="panel">
     <header class="panel-head">
       <h1>Footprints</h1>
+      <div class="head-btns">
+      <button id="open-settings" class="icon-btn" type="button" title="Settings: who is recorded and who can open Footprints" aria-label="Settings" hidden>
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+      </button>
       <button id="collapse" class="icon-btn" type="button" aria-expanded="true" aria-controls="panel-body" title="Hide controls">
         <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M7 14l5-5 5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
+      </div>
     </header>
 
     <div id="panel-body" class="panel-body">
@@ -118,8 +123,36 @@
     </div>
   </aside>
 
+  <dialog id="settings" class="dialog" aria-labelledby="settings-title">
+    <form method="dialog" id="settings-form">
+      <header class="dialog-head">
+        <h1 id="settings-title">Settings</h1>
+        <button class="icon-btn" value="cancel" type="submit" aria-label="Close">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+      </header>
+      <div class="dialog-body">
+        <p id="settings-loading" class="empty">Loading the people and users from Home Assistant…</p>
+        <section id="settings-content" hidden>
+          <h2>Who is recorded</h2>
+          <p class="hint-text">Every person is recorded unless you pick some here. Device trackers only show up when they report a GPS position.</p>
+          <ul id="set-track" class="pick-list"></ul>
+
+          <h2 class="gap">Who can open Footprints</h2>
+          <p class="hint-text" id="access-hint"></p>
+          <ul id="set-access" class="pick-list"></ul>
+        </section>
+        <p id="settings-error" class="status err" hidden></p>
+      </div>
+      <footer class="dialog-foot">
+        <button type="submit" value="cancel" class="btn">Cancel</button>
+        <button type="button" id="settings-save" class="btn primary">Save</button>
+      </footer>
+    </form>
+  </dialog>
+
   <div id="denied" class="denied" hidden>
-    <div><h1>No access</h1><p>Your Home Assistant user isn't allowed to see Footprints. An administrator can add you under <b>users</b> in the app's options.</p></div>
+    <div><h1>No access</h1><p>Your Home Assistant user isn't allowed to see Footprints. An administrator can give you access under Settings in Footprints.</p></div>
   </div>
 
   <script src="static/vendor/leaflet.js"></script>

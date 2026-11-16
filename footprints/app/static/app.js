@@ -255,9 +255,7 @@
 
   // --- drawing: routes ---------------------------------------------------------
 
-  // Routes go through every place passed on the way, so they stay hidden while the
-  // "Count a visit after" filter hides those places.
-  const routesOn = () => state.showRoutes && !state.stay;
+  const routesOn = () => state.showRoutes;
 
   function drawRoutes(entity) {
     const p = state.people.find((x) => x.entity_id === entity);
@@ -477,9 +475,7 @@
 
   function updateRoutesNote(pending, truncated, routingError) {
     const notes = [];
-    if (state.showRoutes && !routesOn()) {
-      notes.push("Routes are hidden while “Count a visit after” is set, because they would still show the places only passed through.");
-    } else if (state.showRoutes) {
+    if (state.showRoutes) {
       if (!state.cfg.snap_to_roads) {
         notes.push("Following the streets is off, so lines connect the recorded points directly. Flights are still drawn as arcs.");
       } else if (routingError) {
@@ -586,7 +582,6 @@
     $("stay").addEventListener("change", () => {
       state.stay = +$("stay").value;
       store.set("stay", state.stay);
-      syncSnapRow();
       reload();
     });
 
@@ -697,6 +692,160 @@
     btn.addEventListener("click", () => setCollapsed(!panel.classList.contains("collapsed")));
   }
 
+  // --- settings: who is recorded, who can open Footprints -------------------------
+
+  function initSettings() {
+    const dlg = $("settings");
+    const btn = $("open-settings");
+    if (!state.cfg.can_delete || typeof dlg.showModal !== "function") return;
+    btn.hidden = false;
+    let data = null;
+
+    const showError = (msg) => { $("settings-error").textContent = msg; $("settings-error").hidden = !msg; };
+
+    function trackedChecked() {
+      return [...document.querySelectorAll("#set-track input:checked")].map((i) => i.value);
+    }
+
+    function nameOf(eid) {
+      const t = data.trackers.find((x) => x.entity_id === eid);
+      return t ? t.name : eid;
+    }
+
+    function renderTrack() {
+      const list = $("set-track");
+      list.innerHTML = "";
+      const tracked = data.tracked ? new Set(data.tracked) : null;
+      for (const t of data.trackers) {
+        const on = tracked ? tracked.has(t.entity_id) : t.entity_id.startsWith("person.");
+        const li = document.createElement("li");
+        li.innerHTML = `<div class="pick-row"><label><input type="checkbox" value="${esc(t.entity_id)}"${on ? " checked" : ""}>` +
+          `<span class="pick-name">${esc(t.name)}<span class="pick-sub">${esc(t.entity_id)}${t.gps ? "" : " · no GPS position right now"}</span></span></label></div>`;
+        list.appendChild(li);
+      }
+      if (!data.trackers.length) list.innerHTML = `<li class="empty">Home Assistant has no people or GPS trackers yet.</li>`;
+      list.onchange = renderAccessPeople;
+    }
+
+    // Each user: Sees everyone / Sees only… (with the people) / No access.
+    function renderAccess() {
+      const list = $("set-access");
+      list.innerHTML = "";
+      $("access-hint").textContent = (data.options_users
+        ? "Right now this comes from the users option of the app. Saving here replaces it. "
+        : "") + "Only Home Assistant administrators can open apps, so other users are listed for completeness only.";
+      for (const u of data.users) {
+        let mode = "all";
+        let people = [];
+        if (data.access) {
+          if (!(u.id in data.access)) mode = "none";
+          else if (data.access[u.id]) { mode = "some"; people = data.access[u.id]; }
+        }
+        const me = u.id === data.me;
+        if (!u.admin) mode = "none";
+        if (me) mode = "all";
+        const li = document.createElement("li");
+        li.dataset.uid = u.id;
+        li.dataset.people = JSON.stringify(people);
+        li.classList.toggle("off", !u.admin);
+        const sub = [u.username && `@${u.username}`, me && "you", !u.admin && "not an administrator"].filter(Boolean).join(" · ");
+        li.innerHTML = `<div class="pick-row"><span class="pick-name" style="flex:1">${esc(u.name)}<span class="pick-sub">${esc(sub)}</span></span>` +
+          `<select aria-label="Access for ${esc(u.name)}"${!u.admin || me ? " disabled" : ""}>` +
+          `<option value="all">Sees everyone</option><option value="some">Sees only…</option><option value="none">No access</option></select></div>` +
+          `<div class="pick-people" hidden></div>`;
+        const sel = li.querySelector("select");
+        sel.value = mode;
+        if (me) sel.title = "You can't take away your own access";
+        sel.addEventListener("change", () => renderPeopleFor(li));
+        list.appendChild(li);
+        renderPeopleFor(li);
+      }
+    }
+
+    function renderPeopleFor(li) {
+      const box = li.querySelector(".pick-people");
+      const some = li.querySelector("select").value === "some";
+      box.hidden = !some;
+      if (!some) return;
+      const chosen = new Set(box.childElementCount ? [...box.querySelectorAll("input:checked")].map((i) => i.value) : JSON.parse(li.dataset.people));
+      box.innerHTML = trackedChecked().map((eid) =>
+        `<label><input type="checkbox" value="${esc(eid)}"${chosen.has(eid) ? " checked" : ""}>${esc(nameOf(eid))}</label>`).join("") ||
+        `<span class="pick-sub">Pick who is recorded first.</span>`;
+    }
+
+    function renderAccessPeople() {
+      for (const li of document.querySelectorAll("#set-access > li")) renderPeopleFor(li);
+    }
+
+    btn.addEventListener("click", async () => {
+      showError("");
+      $("settings-loading").hidden = false;
+      $("settings-content").hidden = true;
+      $("settings-save").disabled = true;
+      dlg.showModal();
+      try {
+        data = await getJson("api/admin");
+        renderTrack();
+        renderAccess();
+        $("settings-loading").hidden = true;
+        $("settings-content").hidden = false;
+        $("settings-save").disabled = false;
+      } catch (err) {
+        $("settings-loading").hidden = true;
+        showError(errorText(err));
+      }
+    });
+
+    $("settings-save").addEventListener("click", async () => {
+      showError("");
+      // Tracking: just the people (the default) is saved as "every person", so new ones join by themselves.
+      const picked = trackedChecked();
+      const persons = data.trackers.filter((t) => t.entity_id.startsWith("person.")).map((t) => t.entity_id);
+      const allPersons = picked.length === persons.length && picked.every((e) => e.startsWith("person."));
+      const tracked = allPersons ? [] : picked;
+      if (!picked.length) { showError("Pick at least one person to record."); return; }
+
+      // Access: everyone admin on "Sees everyone" is the default (also covers future administrators).
+      const rows = [...document.querySelectorAll("#set-access > li")];
+      const admins = rows.filter((li) => !li.classList.contains("off"));
+      let access = null;
+      if (!admins.every((li) => li.querySelector("select").value === "all")) {
+        access = {};
+        for (const li of admins) {
+          const mode = li.querySelector("select").value;
+          if (mode === "all") access[li.dataset.uid] = null;
+          if (mode === "some") {
+            const people = [...li.querySelectorAll(".pick-people input:checked")].map((i) => i.value);
+            if (!people.length) { showError(`Pick at least one person for ${li.querySelector(".pick-name").firstChild.textContent}, or choose No access.`); return; }
+            access[li.dataset.uid] = people;
+          }
+        }
+      }
+      $("settings-save").disabled = true;
+      try {
+        const res = await fetch("api/admin", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tracked, access }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        dlg.close();
+        setStatus("Settings saved.");
+        refresh();
+      } catch (err) {
+        showError(errorText(err));
+      } finally {
+        $("settings-save").disabled = false;
+      }
+    });
+  }
+
+  function errorText(err) {
+    // Server errors come as "502 {"error": "..."}" or plain text.
+    const m = /^\d+ (\{.*\})$/s.exec(err.message);
+    if (m) { try { return JSON.parse(m[1]).error || err.message; } catch { /* fall through */ } }
+    return err.message;
+  }
+
   async function start() {
     try {
       state.cfg = await getJson("api/config");
@@ -706,6 +855,7 @@
       setStatus(`Could not load settings: ${err.message}`, true);
     }
     initControls();
+    initSettings();
     setTiles();
     dark.addEventListener("change", applyDarkTiles);
     await refresh();

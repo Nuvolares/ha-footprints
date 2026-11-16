@@ -49,6 +49,36 @@ def route_key(entity_id: str, trip: dict) -> str:
     return f"{entity_id}|jump" if trip.get("kind") == "jump" else entity_id
 
 
+SPIKE_MIN = 150.0       # m: how far out a point must be to count as an out-and-back
+SPIKE_RETURN = 0.3      # back within this share of the way out counts as "came back"
+SPIKE_STAY = 5 * 60     # s: less time than this at the far point means they didn't stop there
+
+
+def drop_spikes(rows: list) -> list:
+    """Leave out dead-end blips: a point the person went out to and came straight back from.
+
+    Rows start with (ts, lat, lon). Point b between a and c is left out when it lies at least
+    SPIKE_MIN away from both, c is back near a, and c came less than SPIKE_STAY after b (so
+    nobody stopped at b). Most are GPS fixes that landed off the road; the others are
+    U-turns that nobody wants as a place on the map. Points on the way somewhere else, and
+    places where the person stayed, are kept.
+    """
+    if len(rows) < 3:
+        return rows
+    out = [rows[0]]
+    for i in range(1, len(rows) - 1):
+        a, b, c = rows[i - 1], rows[i], rows[i + 1]
+        if c[0] - b[0] < SPIKE_STAY:
+            out_m = distance_m(a[1], a[2], b[1], b[2])
+            back_m = distance_m(b[1], b[2], c[1], c[2])
+            if (out_m >= SPIKE_MIN and back_m >= SPIKE_MIN
+                    and distance_m(a[1], a[2], c[1], c[2]) <= SPIKE_RETURN * min(out_m, back_m)):
+                continue
+        out.append(b)
+    out.append(rows[-1])
+    return out
+
+
 class Thinner:
     """Drops points that add nothing: the person hasn't moved and was seen moments ago."""
 
@@ -188,6 +218,7 @@ class Store:
                 "SELECT ts, lat, lon, acc FROM points WHERE entity_id = ? AND ts >= ? AND ts < ? ORDER BY ts",
                 (entity_id, start, end),
             ).fetchall()
+        rows = drop_spikes(rows)
 
         trips: list[dict] = []
 
@@ -285,6 +316,7 @@ class Store:
                 "SELECT ts, lat, lon FROM points WHERE entity_id = ? AND ts >= ? AND ts < ? ORDER BY ts",
                 (entity_id, start, end if end is not None else 1e12),
             ).fetchall()
+        rows = drop_spikes(rows)
 
         dlat = cell_m / EARTH_M_PER_DEG
         # cell -> [sum_lat, sum_lon, n, dwell, [time per visit], first, last]

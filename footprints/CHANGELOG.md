@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.0
+
+- **Settings** on the map (the gear at the top): pick who is recorded and who
+  can open Footprints from lists of Home Assistant's people, trackers and
+  users, instead of typing names into the options.
+- Dead ends are left out: points the person went out to and came straight
+  back from without stopping no longer show up as dots or line spurs.
+- Undid 0.3.1: routes show again while **Count a visit after** is set.
+
 ## 0.3.1
 
 - Routes are hidden while **Count a visit after** is set, so the places only

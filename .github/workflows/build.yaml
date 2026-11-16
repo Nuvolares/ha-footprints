@@ -34,6 +34,23 @@ jobs:
           curl -sf "http://localhost:8099/api/cells?entity=person.alex&range=30d&min_stay=15" > /dev/null
           curl -sf "http://localhost:8099/api/routes?entity=person.alex&range=30d" | python -c "import json,sys; t=json.load(sys.stdin)['trips']; assert t and all(len(x['line']) >= 2 for x in t), len(t); f=[x for x in t if x['mode']=='air']; assert f and len(f[0]['line']) > 10, [x['mode'] for x in t if x['kind']=='jump']; print(len(t), 'trips and jumps,', len(f), 'flights')"
           now=$(date +%s); curl -sf "http://localhost:8099/api/cells?entity=person.sam&start=$((now-86400))&end=$now" > /dev/null
+          curl -sf http://localhost:8099/api/admin | python -c "import json,sys; d=json.load(sys.stdin); assert len(d['users']) == 3 and len(d['trackers']) == 2, d; print('admin ok')"
+          curl -sf -X POST -H 'Content-Type: application/json' -d '{"tracked": [], "access": {"demo-owner": null, "demo-alex": ["person.alex"]}}' http://localhost:8099/api/admin > /dev/null
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{"access": {"demo-alex": null}}' http://localhost:8099/api/admin)" = 400
+      - name: Out-and-back points
+        run: |
+          cd footprints/app
+          python - <<'EOF'
+          from store import drop_spikes
+          d = 0.0045  # about 500 m
+          spur = [(0, 52.0, 13.0), (60, 52.0 + d, 13.0), (120, 52.0, 13.0005), (180, 52.0, 13.01)]
+          assert len(drop_spikes(spur)) == 3, drop_spikes(spur)      # the dead end is dropped
+          stay = [(0, 52.0, 13.0), (60, 52.0 + d, 13.0), (3600, 52.0, 13.0005)]
+          assert len(drop_spikes(stay)) == 3                         # stayed there: kept
+          line = [(0, 52.0, 13.0), (60, 52.0 + d, 13.0), (120, 52.0 + 2 * d, 13.0)]
+          assert len(drop_spikes(line)) == 3                         # on the way: kept
+          print("ok")
+          EOF
 
   build:
     needs: check

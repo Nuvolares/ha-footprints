@@ -53,9 +53,19 @@ def load_options() -> dict:
 
 # --- who may see what ----------------------------------------------------------
 
-def user_rules(opts: dict) -> dict[str, set[str] | None]:
-    """username (lower case) -> the person entities they may see, or None for everyone."""
+def user_rules(opts: dict, store: Store) -> dict[str, set[str] | None]:
+    """"id:<user id>" or "name:<username>" -> the person entities they may see (None: everyone).
+
+    What was picked under Settings on the map (by user ID) wins over the `users` option (by
+    username). Empty means every administrator sees everyone.
+    """
     rules: dict[str, set[str] | None] = {}
+    saved = store.get_meta("access_rules")
+    if saved is not None:
+        for uid, rule in json.loads(saved).items():
+            people = set(rule.get("people") or [])
+            rules[f"id:{uid}"] = people or None
+        return rules
     for entry in opts.get("users") or []:
         if isinstance(entry, str):
             name, people = entry, []
@@ -64,7 +74,7 @@ def user_rules(opts: dict) -> dict[str, set[str] | None]:
         name = name.strip().lower()
         if name:
             people = {p.strip() for p in people if p and p.strip()}
-            rules[name] = people or None
+            rules[f"name:{name}"] = people or None
     return rules
 
 
@@ -75,18 +85,21 @@ async def access(request: web.Request, handler):
         raise web.HTTPForbidden()
     rules = request.app["rules"]
     request["people_allowed"] = None
+    # Set by the Supervisor's ingress proxy from the signed-in Home Assistant user. Neither the
+    # user ID nor the username (login name) can be changed by the user, unlike the display name.
+    user_id = request.headers.get("X-Remote-User-Id", "").strip()
+    username = request.headers.get("X-Remote-User-Name", "").strip().lower()
+    request["user_id"] = user_id
     if rules and not DEMO:
-        # Set by the Supervisor's ingress proxy from the signed-in Home Assistant user.
-        # The username (login name) can't be changed by the user, unlike the display name.
-        username = request.headers.get("X-Remote-User-Name", "").strip().lower()
-        if username not in rules:
+        key = f"id:{user_id}" if user_id and f"id:{user_id}" in rules else f"name:{username}"
+        if key not in rules:
             if request.path.startswith("/static/"):
                 return await handler(request)
-            log.warning("Denied access for user %r", username or "(unknown)")
+            log.warning("Denied access for user %r", username or user_id or "(unknown)")
             if request.path.startswith("/api/"):
                 return web.json_response({"error": "access denied", "denied": True}, status=403)
             return web.Response(status=403, content_type="text/html", text=DENIED_PAGE)
-        request["people_allowed"] = rules[username]
+        request["people_allowed"] = rules[key]
     return await handler(request)
 
 
@@ -104,7 +117,7 @@ body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--
 font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding:16px;box-sizing:border-box}
 main{max-width:420px;text-align:center}h1{font-size:18px;margin:0 0 8px}p{color:var(--muted);margin:0}</style>
 </head><body><main><h1>No access</h1><p>Your Home Assistant user isn't allowed to see Footprints.
-An administrator can add you under <b>users</b> in the app's options.</p></main></body></html>"""
+An administrator can give you access under Settings in Footprints.</p></main></body></html>"""
 
 
 # --- requests ------------------------------------------------------------------
@@ -234,6 +247,94 @@ async def api_settings(request: web.Request) -> web.Response:
     return web.json_response({"snap_to_roads": request.app["snap"]})
 
 
+def require_full_access(request: web.Request) -> None:
+    if request["people_allowed"] is not None:
+        raise web.HTTPForbidden(text="only users who can see everyone can change this")
+
+
+def current_access(app: web.Application) -> dict[str, list[str] | None]:
+    """The access picked under Settings, as {user id: people or None}; {} when none was."""
+    saved = app["store"].get_meta("access_rules")
+    if saved is None:
+        return {}
+    return {uid: (rule.get("people") or None) for uid, rule in json.loads(saved).items()}
+
+
+async def api_admin(request: web.Request) -> web.Response:
+    """Who can be tracked and who can open Footprints, for the Settings dialog."""
+    require_full_access(request)
+    ha: HomeAssistant | None = request.app["ha"]
+    store: Store = request.app["store"]
+    if DEMO:
+        trackers = [{"entity_id": p["entity_id"], "name": p["name"], "gps": True} for p in demo.people()]
+        users = [{"id": "demo-owner", "username": "owner", "name": "Owner", "admin": True},
+                 {"id": "demo-alex", "username": "alex", "name": "Alex", "admin": True},
+                 {"id": "demo-kid", "username": "kid", "name": "Kid", "admin": False}]
+        tracked = None
+    else:
+        trackers = ha.trackers()
+        try:
+            users = await ha.users()
+        except (ConnectionError, RuntimeError, asyncio.TimeoutError) as err:
+            return web.json_response({"error": f"Could not get the users from Home Assistant: {err}"}, status=502)
+        tracked = ha.explicit or None
+    saved_access = store.get_meta("access_rules") is not None
+    access = current_access(request.app) if saved_access else None
+    if access is None and request.app["rules"]:
+        # Still set by the `users` option (by username): show it the same way.
+        by_name = {u["username"].lower(): u["id"] for u in users if u["username"]}
+        access = {by_name[k[5:]]: (sorted(v) if v else None)
+                  for k, v in request.app["rules"].items() if k.startswith("name:") and k[5:] in by_name}
+    return web.json_response({
+        "trackers": trackers,
+        "tracked": tracked,                 # None: every person
+        "users": users,
+        "access": access or None,           # None: every administrator sees everyone
+        "options_users": bool(request.app["opts"].get("users")) and not saved_access,
+        "me": request["user_id"] or ("demo-owner" if DEMO else ""),
+    })
+
+
+async def api_admin_save(request: web.Request) -> web.Response:
+    require_full_access(request)
+    try:
+        body = await request.json()
+    except ValueError:
+        raise web.HTTPBadRequest(text="expected JSON")
+    store: Store = request.app["store"]
+    ha: HomeAssistant | None = request.app["ha"]
+
+    if "tracked" in body:
+        tracked = body["tracked"] or []
+        if not isinstance(tracked, list) or not all(isinstance(e, str) and "." in e for e in tracked):
+            raise web.HTTPBadRequest(text="tracked must be a list of entity IDs")
+        await asyncio.to_thread(store.set_meta, "tracked_entities", json.dumps(tracked))
+        if ha:
+            ha.set_tracked(tracked)
+
+    if "access" in body:
+        access = body["access"]
+        if access is None:  # back to the default: every administrator sees everyone
+            new = {}
+        elif isinstance(access, dict):
+            new = {}
+            for uid, people in access.items():
+                if people is not None and not (isinstance(people, list) and all(isinstance(p, str) for p in people)):
+                    raise web.HTTPBadRequest(text="people must be a list of entity IDs")
+                new[str(uid)] = {"people": people or []}
+        else:
+            raise web.HTTPBadRequest(text="access must be an object")
+        me = request["user_id"] or ("demo-owner" if DEMO else "")
+        if new and (not me or me not in new or new[me]["people"]):
+            raise web.HTTPBadRequest(text="You can't take away your own access to everyone; "
+                                          "keep yourself on Sees everyone.")
+        # Saved even when empty ("every administrator"), so the `users` option no longer applies.
+        await asyncio.to_thread(store.set_meta, "access_rules", json.dumps(new))
+        request.app["rules"] = user_rules(request.app["opts"], store)
+        log.info("Access changed on the map: %s", f"{len(new)} users" if new else "every administrator")
+    return web.json_response({"ok": True})
+
+
 async def api_map_token(request: web.Request) -> web.Response:
     ha: HomeAssistant | None = request.app["ha"]
     if ha is None:
@@ -289,6 +390,9 @@ async def on_startup(app: web.Application) -> None:
         await asyncio.to_thread(demo.seed, app["store"])
     else:
         app["ha"] = HomeAssistant(app["http"], app["store"], app["opts"])
+        tracked = store.get_meta("tracked_entities")
+        if tracked is not None:  # picked under Settings on the map; wins over the option
+            app["ha"].explicit = json.loads(tracked)
         app["tasks"].append(asyncio.create_task(app["ha"].run()))
 
 
@@ -307,8 +411,8 @@ def main() -> None:
 
     app = web.Application(middlewares=[access])
     app["opts"] = opts
-    app["rules"] = user_rules(opts)
     app["store"] = Store(DATA_DIR / "footprints.db")
+    app["rules"] = user_rules(opts, app["store"])
     app["ha"] = None
     app["router"] = None
     app["snap"] = False
@@ -321,6 +425,8 @@ def main() -> None:
     app.router.add_get("/api/routes", api_routes)
     app.router.add_get("/api/map_token", api_map_token)
     app.router.add_post("/api/settings", api_settings)
+    app.router.add_get("/api/admin", api_admin)
+    app.router.add_post("/api/admin", api_admin_save)
     app.router.add_delete("/api/history/{entity}", api_delete)
     app.router.add_static("/static", STATIC_DIR)
     app.on_startup.append(on_startup)
