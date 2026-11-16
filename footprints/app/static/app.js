@@ -34,7 +34,7 @@
     stay: store.get("stay", 0),
     cell: store.get("cell", null),
     basemap: store.get("basemap", "ha"),
-    showRoutes: store.get("routes", false),
+    showRoutes: store.get("routes2", true), // "routes2": 0.3.0 shows routes by default, also for earlier viewers
     cells: {},        // entity_id -> cells from the server
     trips: {},        // entity_id -> trips from the server
     layers: {},       // entity_id -> L.LayerGroup of dots
@@ -208,10 +208,30 @@
       `<span class="pop-meta">First ${when(c.first)} · last ${when(c.last)}</span>`;
   }
 
+  function tripKind(t) {
+    if (t.mode === "air") return "Flight (too fast for the road)";
+    if (t.kind === "jump") {
+      return t.mode === "street"
+        ? "No recorded points in between · likely route along the streets"
+        : "No recorded points in between · straight line (no road found: a ferry, boat or off-road)";
+    }
+    return t.snapped ? "Following the streets" : "Straight lines between recorded points";
+  }
+
   function tripHtml(p, t) {
-    return `<b>${esc(p.name)}</b> · ${esc(dayName(t.start))}<br>` +
-      `${clock(t.start)} → ${clock(t.end)} · ${km(t.dist)} · ${duration(t.end - t.start)}<br>` +
-      `<span class="pop-meta">${t.snapped ? "Following the streets" : "Straight lines between recorded points"}</span>`;
+    const span = t.end - t.start;
+    return `<b>${esc(p.name)}</b> · ${esc(dayName(t.start))}${dayName(t.end) !== dayName(t.start) ? ` → ${esc(dayName(t.end))}` : ""}<br>` +
+      `${clock(t.start)} → ${clock(t.end)} · ${km(t.dist)} · ${duration(span)}<br>` +
+      `<span class="pop-meta">${tripKind(t)}</span>`;
+  }
+
+  // How each kind of line looks: solid along the streets, dotted arc for flights, dashed when straight.
+  function lineStyle(t) {
+    if (t.mode === "air") return { weight: 2.5, opacity: 0.9, dashArray: "1 7" };
+    if (t.kind === "jump") return t.mode === "street"
+      ? { weight: 3, opacity: 0.55, dashArray: null }
+      : { weight: 3, opacity: 0.7, dashArray: "12 8" };
+    return { weight: 3.5, opacity: 0.8, dashArray: t.snapped ? null : "6 6" };
   }
 
   // --- drawing: dots -----------------------------------------------------------
@@ -243,8 +263,7 @@
     const group = L.layerGroup();
     for (const t of state.trips[entity] || []) {
       const line = L.polyline(t.line, {
-        renderer: routeRenderer, color: p.color, weight: 3.5, opacity: 0.8,
-        dashArray: t.snapped ? null : "6 6", lineCap: "round", lineJoin: "round",
+        renderer: routeRenderer, color: p.color, lineCap: "round", lineJoin: "round", ...lineStyle(t),
       });
       line.bindPopup(() => tripHtml(p, t));
       line.color = p.color;
@@ -456,13 +475,13 @@
     const notes = [];
     if (state.showRoutes) {
       if (!state.cfg.snap_to_roads) {
-        notes.push("Dashed lines connect the recorded points directly. Turn on Follow the streets to draw them along the roads.");
+        notes.push("Following the streets is off, so lines connect the recorded points directly. Flights are still drawn as arcs.");
       } else if (routingError) {
         notes.push(`Matching to streets failed: ${routingError}. Showing straight lines for now.`);
       } else if (pending) {
         notes.push(`Routing ${pending} trip${pending === 1 ? "" : "s"} along the streets… (about one per second)`);
       }
-      if (truncated) notes.push("Showing the latest 300 trips. Pick a shorter time to see older ones.");
+      if (truncated) notes.push("Showing the latest 300 trips and jumps. Pick a shorter time to see older ones.");
     }
     $("routes-note").textContent = notes.join(" ");
     $("routes-note").hidden = !notes.length;
@@ -578,7 +597,10 @@
     $("day-next").addEventListener("click", () => shiftDay(1));
 
     // Routes.
-    const syncSnapRow = () => { $("snap-row").hidden = !state.showRoutes; };
+    const syncSnapRow = () => {
+      $("snap-row").hidden = !state.showRoutes;
+      $("line-key").hidden = !state.showRoutes;
+    };
     $("snap").checked = !!cfg.snap_to_roads;
     $("snap").disabled = !cfg.can_delete;
     $("snap-hint").textContent = cfg.can_delete
@@ -603,7 +625,7 @@
     $("routes").checked = state.showRoutes;
     $("routes").addEventListener("change", () => {
       state.showRoutes = $("routes").checked;
-      store.set("routes", state.showRoutes);
+      store.set("routes2", state.showRoutes);
       syncSnapRow();
       if (!state.showRoutes) {
         for (const p of state.people) drawRoutes(p.entity_id);
@@ -669,7 +691,7 @@
       state.cfg = await getJson("api/config");
     } catch (err) {
       if (err.message === "access denied") return;
-      state.cfg = { cell_size_m: 50, map_style: "auto", tile_url: "", snap_to_roads: false, can_delete: false };
+      state.cfg = { cell_size_m: 50, map_style: "auto", tile_url: "", snap_to_roads: true, can_delete: false };
       setStatus(`Could not load settings: ${err.message}`, true);
     }
     initControls();

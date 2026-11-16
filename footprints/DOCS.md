@@ -30,11 +30,19 @@ direction of travel.
   now.
 - **Time**: one **Day** (with arrows to step through the days), the last 7 or
   30 days, the last year, or all time.
-- **Routes**: shows the trips as lines in the person's color, with small arrows
-  pointing the way they went. Select a line to see when the trip started and
-  ended, how long it was, and how far. Dashed lines connect the recorded
-  points directly; solid lines follow the streets (see *Routes along the
-  streets*). With long time ranges, the latest 300 trips are shown.
+- **Routes** (on by default): shows the trips as lines in the person's color,
+  with small arrows pointing the way they went. Select a line to see when the
+  trip started and ended, how long it was, and how far. With long time ranges,
+  the latest 300 trips are shown. The kinds of lines:
+  - **Solid**: along the streets (see *Routes along the streets*). A fainter
+    solid line is a stretch without recorded points (the phone was silent),
+    drawn along the likely route.
+  - **Dashed**: a straight line. Used where no road leads (a ferry, a boat, a
+    lake), and for trips that haven't been routed yet or when following the
+    streets is off.
+  - **Dotted arc**: a flight. When someone turns up more than 30 km away faster
+    than 250 km/h in a straight line (New York at 9:00, Atlanta at 11:00), it
+    can't have been by road, so the two places are connected over the globe.
 - **Shade places by**: *Visits* (how often they went there) or *Time spent*
   (how long they were there in total).
 - **Solid after**: how many visits (or hours) it takes for a dot to become
@@ -52,15 +60,18 @@ direction of travel.
 ## Routes along the streets
 
 Recorded points are often minutes apart, so a straight line between them cuts
-through buildings. Turn on **Follow the streets** under Routes on the map (or
-`snap_to_roads` in the options; the switch on the map wins once it has been
-used). Only users who can see everyone can change it. Footprints then works like a
+through buildings. **Follow the streets** under Routes on the map is on by
+default (`snap_to_roads` in the options; the switch on the map wins once it
+has been used). Only users who can see everyone can change it. Footprints then works like a
 navigation system: it asks an OSRM routing server for the street route from
 each recorded point to the next, in order, picking car, bike or walking routes
 from the trip's speed. Points closer together than about a street block are
 skipped so GPS wobble doesn't cause detours, and a point that makes the route
 loop out and back (a fix that landed on the wrong road) is left out. Each trip
-is sent once and the result is stored, so the map stays fast.
+is sent once and the result is stored, so the map stays fast. Points more than
+300 m from any road or path (out on the water, for example) aren't pulled to
+the nearest street; they are joined with straight lines. Flights are never
+sent to the routing server.
 
 When points are far apart, the line shows the most likely route between them,
 so a short detour the person took in between can be missing.
@@ -113,7 +124,7 @@ sidebar*.
 | `cell_size_m` | 50 | Default spot size on the map. |
 | `map_style` | auto | `auto` (follows light/dark mode), `light` or `dark`. Dark mode darkens the Home Assistant and OpenStreetMap maps. `osm` is the same as `light`. |
 | `tile_url` | — | Optional custom tile server, for example `https://tile.example.com/{z}/{x}/{y}.png`. |
-| `snap_to_roads` | false | Draw routes along streets using the routing server. |
+| `snap_to_roads` | true | Draw routes along streets using the routing server. |
 | `routing_url` | FOSSGIS | OSRM server; `{profile}` becomes `car`, `bike` or `foot`. |
 | `log_level` | info | How much detail the app writes to its log. |
 
@@ -135,8 +146,9 @@ sidebar*.
 Everything stays on your Home Assistant: the points are stored in the app's
 `/data` folder and are only reachable through Home Assistant's own login. The
 map background is loaded from the map service you pick; it sees which area is
-being viewed, but never receives the recorded locations. Only with
-`snap_to_roads` turned on are trip coordinates sent to the routing server.
+being viewed, but never receives the recorded locations. With **Follow the
+streets** on (the default), trip coordinates are sent to the routing server;
+switch it off on the map, or run your own routing server, to keep them at home.
 
 To delete one person's recorded history, hover over their name in the People
 list and select the trash icon. Uninstalling the app removes all of it. If the

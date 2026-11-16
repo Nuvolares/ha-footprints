@@ -1,5 +1,5 @@
 name: Footprints
-version: "0.2.2"
+version: "0.3.0"
 slug: footprints
 description: >-
   A map of every place the people in your home have been. Places they keep
@@ -27,7 +27,7 @@ options:
   keep_days: 0
   cell_size_m: 50
   map_style: auto
-  snap_to_roads: false
+  snap_to_roads: true
   routing_url: "https://routing.openstreetmap.de/routed-{profile}"
   log_level: info
 schema:

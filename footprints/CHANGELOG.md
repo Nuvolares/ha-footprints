@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.0
+
+- Routes and **Follow the streets** are now on by default (also after
+  updating; switch them off on the map if you don't want them).
+- **Flights**: when someone shows up far away faster than any car could
+  manage (New York at 9:00, Atlanta at 11:00), the two places are connected
+  with a dotted arc.
+- **Boats and ferries**: points out on the water, or stretches where no road
+  leads, are connected with a straight dashed line instead of being pulled to
+  the nearest street.
+- When the phone was silent and the person turned up somewhere else, the gap
+  is now drawn too: along the likely street route, or straight if there is
+  none.
+- A small key under Routes explains the kinds of lines. Routes are redone once
+  after updating.
+
 ## 0.2.2
 
 - New **Follow the streets** switch under Routes on the map, so routes can be

@@ -32,7 +32,7 @@ jobs:
           curl -sf http://localhost:8099/api/people | python -c "import json,sys; d=json.load(sys.stdin); assert len(d['people']) == 2, d; print(d['people'][0]['points'], 'points')"
           curl -sf "http://localhost:8099/api/cells?entity=person.alex&range=all" | python -c "import json,sys; c=json.load(sys.stdin)['cells']; assert c and max(x['visits'] for x in c) > 50, len(c); print(len(c), 'cells, max visits', max(x['visits'] for x in c))"
           curl -sf "http://localhost:8099/api/cells?entity=person.alex&range=30d&min_stay=15" > /dev/null
-          curl -sf "http://localhost:8099/api/routes?entity=person.alex&range=30d" | python -c "import json,sys; t=json.load(sys.stdin)['trips']; assert t and all(len(x['line']) >= 2 for x in t), len(t); print(len(t), 'trips')"
+          curl -sf "http://localhost:8099/api/routes?entity=person.alex&range=30d" | python -c "import json,sys; t=json.load(sys.stdin)['trips']; assert t and all(len(x['line']) >= 2 for x in t), len(t); f=[x for x in t if x['mode']=='air']; assert f and len(f[0]['line']) > 10, [x['mode'] for x in t if x['kind']=='jump']; print(len(t), 'trips and jumps,', len(f), 'flights')"
           now=$(date +%s); curl -sf "http://localhost:8099/api/cells?entity=person.sam&start=$((now-86400))&end=$now" > /dev/null
 
   build:

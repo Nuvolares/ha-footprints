@@ -13,7 +13,7 @@ from aiohttp import web
 import demo
 from ha import HomeAssistant
 from routing import Router
-from store import Store
+from store import Store, great_circle
 
 log = logging.getLogger("footprints")
 
@@ -31,7 +31,7 @@ DEFAULT_OPTIONS = {
     "cell_size_m": 50,
     "map_style": "auto",
     "tile_url": "",
-    "snap_to_roads": False,
+    "snap_to_roads": True,
     "routing_url": "https://routing.openstreetmap.de/routed-{profile}",
     "log_level": "info",
 }
@@ -194,15 +194,24 @@ async def api_routes(request: web.Request) -> web.Response:
     trips, truncated = await asyncio.to_thread(store.trips, entity, start, end or 1e12)
     out, pending = [], 0
     for trip in trips:
-        line, snapped = None, False
-        if router and request.app["snap"]:
-            line, waiting = router.lookup(entity, trip)  # quick, and it touches the asyncio queue
+        line, snapped, mode = None, False, "direct"
+        if trip["kind"] == "jump" and trip["mode"] == "air":
+            # Flights are drawn as arcs over the globe, never along roads.
+            line, mode = [], "air"
+            for a, b in zip(trip["points"], trip["points"][1:]):
+                line.extend(great_circle(a[1], a[2], b[1], b[2])[1 if line else 0:])
+        elif router and request.app["snap"]:
+            found, waiting = router.lookup(entity, trip)  # quick, and it touches the asyncio queue
             pending += waiting
-            snapped = line is not None
+            if isinstance(found, dict):  # a jump: routed along streets, or a straight line
+                line, mode = found["line"], found["mode"]
+            elif found is not None:
+                line, mode = found, "street"
+            snapped = mode == "street"
         if line is None:
             line = [[round(p[1], 6), round(p[2], 6)] for p in trip["points"]]
         out.append({"start": int(trip["start"]), "end": int(trip["end"]), "dist": trip["dist"],
-                    "snapped": snapped, "line": line})
+                    "kind": trip["kind"], "mode": mode, "snapped": snapped, "line": line})
     return web.json_response({
         "entity_id": entity, "trips": out, "truncated": truncated, "pending": pending,
         "routing_error": router.last_error if router and request.app["snap"] else None,
@@ -260,7 +269,17 @@ async def on_startup(app: web.Application) -> None:
     app["http"] = aiohttp.ClientSession()
     app["tasks"] = [asyncio.create_task(retention(app))]
     # The switch on the map wins over the option, once someone has used it.
-    saved = app["store"].get_meta("snap_to_roads")
+    store: Store = app["store"]
+    saved = store.get_meta("snap_to_roads")
+    if store.get_meta("snap_default_on") is None:
+        # 0.3.0 turned following the streets on by default, also for existing installs whose
+        # options still have the old default (off), unless someone switched it off on the map.
+        store.set_meta("snap_default_on", "1")
+        if saved is None:
+            saved = "1"
+            store.set_meta("snap_to_roads", saved)
+    if DEMO and not os.environ.get("FP_DEMO_SNAP"):
+        saved = "0"  # previews and the build check don't send made-up trips to the public server
     app["snap"] = (saved == "1") if saved is not None else bool(app["opts"]["snap_to_roads"])
     app["router"] = Router(app["http"], app["store"], app["opts"]["routing_url"])
     app["tasks"].append(asyncio.create_task(app["router"].run()))

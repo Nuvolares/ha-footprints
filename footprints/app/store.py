@@ -11,10 +11,42 @@ MAX_GAP = 12 * 3600  # a longer silence means the tracker was offline; don't cou
 
 
 def distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """Equirectangular approximation, accurate enough at these distances."""
-    x = math.radians(lon2 - lon1) * math.cos(math.radians((lat1 + lat2) / 2))
-    y = math.radians(lat2 - lat1)
-    return 6_371_000.0 * math.hypot(x, y)
+    """Great-circle distance in meters (haversine), right for a street block and for a flight."""
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    h = (math.sin((p2 - p1) / 2) ** 2
+         + math.cos(p1) * math.cos(p2) * math.sin(math.radians(lon2 - lon1) / 2) ** 2)
+    return 2 * 6_371_000.0 * math.asin(min(1.0, math.sqrt(h)))
+
+
+def great_circle(lat1: float, lon1: float, lat2: float, lon2: float, steps: int = 48) -> list:
+    """Points along the shortest path over the globe, the way flights are drawn on a map.
+
+    Longitudes are kept continuous (they may go past ±180), so the line doesn't jump across
+    the whole map when a flight crosses the date line.
+    """
+    p1, l1, p2, l2 = map(math.radians, (lat1, lon1, lat2, lon2))
+    a = (math.cos(p1) * math.cos(l1), math.cos(p1) * math.sin(l1), math.sin(p1))
+    b = (math.cos(p2) * math.cos(l2), math.cos(p2) * math.sin(l2), math.sin(p2))
+    omega = math.acos(max(-1.0, min(1.0, sum(x * y for x, y in zip(a, b)))))
+    if omega < 1e-6:
+        return [[round(lat1, 6), round(lon1, 6)], [round(lat2, 6), round(lon2, 6)]]
+    out, prev_lon = [], None
+    for i in range(steps + 1):
+        t = i / steps
+        k1, k2 = math.sin((1 - t) * omega) / math.sin(omega), math.sin(t * omega) / math.sin(omega)
+        x, y, z = (k1 * u + k2 * v for u, v in zip(a, b))
+        lat = math.degrees(math.atan2(z, math.hypot(x, y)))
+        lon = math.degrees(math.atan2(y, x))
+        if prev_lon is not None:
+            lon += 360 * round((prev_lon - lon) / 360)
+        prev_lon = lon
+        out.append([round(lat, 6), round(lon, 6)])
+    return out
+
+
+def route_key(entity_id: str, trip: dict) -> str:
+    """Trips and jumps can start at the same point, so their stored routes are kept apart."""
+    return f"{entity_id}|jump" if trip.get("kind") == "jump" else entity_id
 
 
 class Thinner:
@@ -98,7 +130,7 @@ class Store:
     def delete_entity(self, entity_id: str) -> int:
         with self.lock:
             cur = self.db.execute("DELETE FROM points WHERE entity_id = ?", (entity_id,))
-            self.db.execute("DELETE FROM routes WHERE entity_id = ?", (entity_id,))
+            self.db.execute("DELETE FROM routes WHERE entity_id IN (?, ?)", (entity_id, f"{entity_id}|jump"))
             # Keep the "imported" marker and mark the deletion, so a restart doesn't pull the
             # deleted history back in from the recorder.
             self.db.execute("INSERT OR REPLACE INTO meta VALUES (?, ?)", (f"imported:{entity_id}", str(time.time())))
@@ -137,10 +169,20 @@ class Store:
         """Split the points into trips: runs of movement between two stops.
 
         A trip ends when the person stays within STOP_RADIUS for STOP_TIME, or when the tracker
-        is silent for longer than TRIP_GAP. Returns the most recent `max_trips` trips (oldest
-        first) and whether older ones were left out.
+        is silent for longer than TRIP_GAP. Movement nobody could do by car or on foot (faster
+        than AIR_SPEED over more than AIR_MIN) also ends a trip.
+
+        Where the tracker was silent and the person turned up somewhere else, or moved too fast
+        for the ground, a **jump** connects the two points (kind "jump", mode "air" or
+        "ground"), so flights, ferries and phone-off stretches still show up as a line.
+
+        Returns the most recent `max_trips` trips and jumps (oldest first) and whether older ones
+        were left out.
         """
         TRIP_GAP, STOP_RADIUS, STOP_TIME, MIN_LENGTH = 30 * 60, 80.0, 5 * 60, 250.0
+        JUMP_MIN = 1000.0          # a silent gap must cover at least this to get a line
+        AIR_SPEED = 250 / 3.6      # m/s, straight-line speed above which it must have been a flight
+        AIR_MIN = 30000.0          # and only over this distance (GPS glitches can look fast too)
         with self.lock:
             rows = self.db.execute(
                 "SELECT ts, lat, lon, acc FROM points WHERE entity_id = ? AND ts >= ? AND ts < ? ORDER BY ts",
@@ -154,14 +196,34 @@ class Store:
                 return
             length = sum(distance_m(a[1], a[2], b[1], b[2]) for a, b in zip(points, points[1:]))
             if length >= MIN_LENGTH:
-                trips.append({"start": points[0][0], "end": points[-1][0], "dist": round(length), "points": points})
+                trips.append({"kind": "trip", "start": points[0][0], "end": points[-1][0],
+                              "dist": round(length), "points": points})
+
+        def jump(a, b, d: float, mode: str) -> None:
+            last = trips[-1] if trips else None
+            if (mode == "air" and last and last["kind"] == "jump" and last["mode"] == "air"
+                    and last["end"] == a[0]):
+                # Several fixes during one flight: one flight line.
+                last["points"].append(b)
+                last["end"] = b[0]
+                last["dist"] = round(last["dist"] + d)
+                return
+            trips.append({"kind": "jump", "mode": mode, "start": a[0], "end": b[0],
+                          "dist": round(d), "points": [a, b]})
 
         cur: list = []
         still = 0  # index in cur of the point the person may be standing still at
         for p in rows:
-            if cur and p[0] - cur[-1][0] > TRIP_GAP:
-                close(cur)
-                cur, still = [], 0
+            if cur:
+                prev = cur[-1]
+                dt = p[0] - prev[0]
+                d = distance_m(prev[1], prev[2], p[1], p[2])
+                flying = d > AIR_MIN and d / max(dt, 1.0) > AIR_SPEED
+                if flying or dt > TRIP_GAP:
+                    close(cur)
+                    if flying or d >= JUMP_MIN:
+                        jump(prev, p, d, "air" if flying else "ground")
+                    cur, still = [], 0
             cur.append(p)
             if len(cur) == 1:
                 continue
@@ -183,7 +245,7 @@ class Store:
         with self.lock:
             row = self.db.execute(
                 "SELECT end_ts, n, geometry FROM routes WHERE entity_id = ? AND start_ts = ?",
-                (entity_id, trip["start"]),
+                (route_key(entity_id, trip), trip["start"]),
             ).fetchone()
         if not row or row[0] != trip["end"] or row[1] != len(trip["points"]):
             return False, None  # never matched, or the trip grew since (it was still going on)
@@ -198,7 +260,7 @@ class Store:
         with self.lock:
             self.db.execute(
                 "INSERT OR REPLACE INTO routes VALUES (?, ?, ?, ?, ?)",
-                (entity_id, trip["start"], trip["end"], len(trip["points"]),
+                (route_key(entity_id, trip), trip["start"], trip["end"], len(trip["points"]),
                  json.dumps(geometry, separators=(",", ":")) if geometry else None),
             )
             self.db.commit()

@@ -54,6 +54,10 @@ def seed(store: Store, days: int = 180) -> None:
                 t += 3600
                 pos = far
             t = _trip(rng, rows, eid, t, pos, HOME, 25)
+            if eid == "person.alex" and d == days - 4:  # an evening flight to Barcelona and back
+                rows.append((eid, t + 1800, 52.3667, 13.5033, 20.0))   # BER airport
+                rows.append((eid, t + 9000, 41.2974, 2.0833, 20.0))    # BCN airport, 2 h later
+                rows.append((eid, t + 10800, 41.3870, 2.1700, 15.0))  # into town
         store.add([r for r in rows if r[1] < now])
         PEOPLE[eid]["lat"], PEOPLE[eid]["lon"] = HOME
 
