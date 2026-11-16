@@ -37,21 +37,18 @@
   const renderer = L.canvas({ padding: 0.5 });
   let tiles = null;
 
+  // OpenStreetMap's own tiles: free and no API key (CARTO's basemaps now require one).
+  // OSM has no dark style, so dark mode darkens the light tiles with a CSS filter.
   function tileLayer(cfg) {
     const osm = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
-    if (cfg.tile_url) return L.tileLayer(cfg.tile_url, { maxZoom: 19, attribution: osm });
-    if (cfg.map_style === "osm") {
-      return L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: osm });
-    }
-    const isDark = cfg.map_style === "dark" || (cfg.map_style !== "light" && dark.matches);
-    return L.tileLayer(`https://{s}.basemaps.cartocdn.com/${isDark ? "dark_all" : "light_all"}/{z}/{x}/{y}{r}.png`, {
-      maxZoom: 20, subdomains: "abcd", attribution: `${osm} &copy; <a href="https://carto.com/attributions">CARTO</a>`,
-    });
+    return L.tileLayer(cfg.tile_url || "https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: osm });
   }
 
   function setTiles(cfg) {
     if (tiles) map.removeLayer(tiles);
     tiles = tileLayer(cfg).addTo(map);
+    const isDark = !cfg.tile_url && (cfg.map_style === "dark" || (cfg.map_style === "auto" && dark.matches));
+    map.getContainer().classList.toggle("dark-tiles", isDark);
   }
 
   function radiusPx(lat) {

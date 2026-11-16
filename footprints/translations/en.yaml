@@ -30,8 +30,8 @@ configuration:
   map_style:
     name: Map style
     description: >-
-      auto follows your device's light or dark mode. osm uses the standard
-      OpenStreetMap tiles.
+      auto follows your device's light or dark mode. The map is OpenStreetMap;
+      dark mode shows a darkened version of it. osm is the same as light.
   tile_url:
     name: Custom tile URL
     description: >-

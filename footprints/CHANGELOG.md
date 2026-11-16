@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.2
+
+- Fix the map showing "API Key Required": switch from CARTO (which now needs an
+  API key) to OpenStreetMap tiles. Dark mode shows a darkened map.
+
 ## 0.1.1
 
 - Repository clean-up and build check; no changes to the app itself.
