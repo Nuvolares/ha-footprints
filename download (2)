@@ -1,4 +1,0 @@
-# Add-on files run inside Linux containers: always keep LF line endings.
-* text=auto eol=lf
-*.png binary
-*.woff2 binary

@@ -1,5 +1,0 @@
-__pycache__/
-*.pyc
-.dev-data/
-# Downloaded during the image build (see Dockerfile), not committed
-footprints/app/static/vendor/
