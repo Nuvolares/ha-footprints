@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.1
+
+- Routes are hidden while **Count a visit after** is set, so the places only
+  passed through don't show up as lines. They come back with *any stop*.
+
 ## 0.3.0
 
 - Routes and **Follow the streets** are now on by default (also after

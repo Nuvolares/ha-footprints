@@ -48,7 +48,9 @@ direction of travel.
 - **Solid after**: how many visits (or hours) it takes for a dot to become
   fully solid. Lower it to make regular places stand out sooner.
 - **Count a visit after**: set it to 5 minutes or more to hide streets they
-  only drove through and show only places where they stopped.
+  only drove through and show only places where they stopped. Routes are
+  hidden while this is set, since they would still show where they drove;
+  set it back to *any stop* to see them again.
 - **Spot size**: how close two positions must be to count as the same place.
   Use a larger size when looking at a whole country.
 - **Map**: the background map. *Home Assistant map* is the same one as the Map

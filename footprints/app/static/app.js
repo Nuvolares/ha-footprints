@@ -255,11 +255,15 @@
 
   // --- drawing: routes ---------------------------------------------------------
 
+  // Routes go through every place passed on the way, so they stay hidden while the
+  // "Count a visit after" filter hides those places.
+  const routesOn = () => state.showRoutes && !state.stay;
+
   function drawRoutes(entity) {
     const p = state.people.find((x) => x.entity_id === entity);
     if (state.routeLayers[entity]) map.removeLayer(state.routeLayers[entity]);
     delete state.routeLayers[entity];
-    if (!p || !state.showRoutes || state.hidden.has(entity)) return;
+    if (!p || !routesOn() || state.hidden.has(entity)) return;
     const group = L.layerGroup();
     for (const t of state.trips[entity] || []) {
       const line = L.polyline(t.line, {
@@ -276,7 +280,7 @@
   // Small chevrons along each visible route, pointing the way the person went.
   function drawArrows() {
     arrowLayer.clearLayers();
-    if (!state.showRoutes) return;
+    if (!routesOn()) return;
     const view = map.getBounds().pad(0.1);
     let count = 0;
     for (const group of Object.values(state.routeLayers)) {
@@ -447,7 +451,7 @@
     await Promise.all(state.people.map(async (p) => {
       const id = encodeURIComponent(p.entity_id);
       const jobs = [getJson(`api/cells?entity=${id}&${q}`).then((d) => { cells[p.entity_id] = d.cells; })];
-      if (state.showRoutes) {
+      if (routesOn()) {
         jobs.push(getJson(`api/routes?entity=${id}&${windowQuery()}`).then((d) => {
           trips[p.entity_id] = d.trips;
           pending += d.pending;
@@ -473,7 +477,9 @@
 
   function updateRoutesNote(pending, truncated, routingError) {
     const notes = [];
-    if (state.showRoutes) {
+    if (state.showRoutes && !routesOn()) {
+      notes.push("Routes are hidden while “Count a visit after” is set, because they would still show the places only passed through.");
+    } else if (state.showRoutes) {
       if (!state.cfg.snap_to_roads) {
         notes.push("Following the streets is off, so lines connect the recorded points directly. Flights are still drawn as arcs.");
       } else if (routingError) {
@@ -577,7 +583,12 @@
     cellSel.addEventListener("change", () => { state.cell = +cellSel.value; store.set("cell", state.cell); reload(); });
 
     $("stay").value = state.stay;
-    $("stay").addEventListener("change", () => { state.stay = +$("stay").value; store.set("stay", state.stay); reload(); });
+    $("stay").addEventListener("change", () => {
+      state.stay = +$("stay").value;
+      store.set("stay", state.stay);
+      syncSnapRow();
+      reload();
+    });
 
     // Time: a named range, or one day.
     const syncDayRow = () => { $("day-row").hidden = state.range !== "day"; };
@@ -598,8 +609,8 @@
 
     // Routes.
     const syncSnapRow = () => {
-      $("snap-row").hidden = !state.showRoutes;
-      $("line-key").hidden = !state.showRoutes;
+      $("snap-row").hidden = !routesOn();
+      $("line-key").hidden = !routesOn();
     };
     $("snap").checked = !!cfg.snap_to_roads;
     $("snap").disabled = !cfg.can_delete;
