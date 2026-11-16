@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.1
+
+- Routes along the streets now work like a navigation system: the route is
+  planned from each recorded point to the next, so lines no longer cut across
+  the map when the phone reports only every minute or so. GPS wobble and
+  misplaced points no longer cause detours. Routes snapped by 0.2.0 are
+  redone automatically.
+- Only coordinates are sent to the routing server now (no times).
+
 ## 0.2.0
 
 - Routes: show the trips between places as lines with arrows for the

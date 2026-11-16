@@ -52,12 +52,18 @@ direction of travel.
 ## Routes along the streets
 
 Recorded points are often minutes apart, so a straight line between them cuts
-through buildings. With `snap_to_roads` turned on, Footprints asks an OSRM
-routing server for the streets and paths that best match each trip, picking
-car, bike or walking routes from the trip's speed. Each trip is sent once and
-the result is stored, so the map stays fast.
+through buildings. With `snap_to_roads` turned on, Footprints works like a
+navigation system: it asks an OSRM routing server for the street route from
+each recorded point to the next, in order, picking car, bike or walking routes
+from the trip's speed. Points closer together than about a street block are
+skipped so GPS wobble doesn't cause detours, and a point that makes the route
+loop out and back (a fix that landed on the wrong road) is left out. Each trip
+is sent once and the result is stored, so the map stays fast.
 
-This sends the trip's coordinates and times (no names, no entity IDs) to the
+When points are far apart, the line shows the most likely route between them,
+so a short detour the person took in between can be missing.
+
+This sends the trip's coordinates (no times, no names, no entity IDs) to the
 routing server. The default is the free server run by FOSSGIS
 (`routing.openstreetmap.de`), which allows light personal use. To keep
 everything at home, run your own [OSRM](https://github.com/Project-OSRM/osrm-backend)

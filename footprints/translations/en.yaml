@@ -50,7 +50,8 @@ configuration:
     name: Snap routes to streets
     description: >-
       Draw routes along the actual streets and paths instead of straight
-      lines. This sends each trip's coordinates and times (no names) once to
+      lines, routed from each recorded point to the next like a navigation
+      system. This sends each trip's coordinates (no times, no names) once to
       the routing server below.
   routing_url:
     name: Routing server

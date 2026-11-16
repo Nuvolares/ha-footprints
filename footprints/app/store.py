@@ -189,6 +189,11 @@ class Store:
             return False, None  # never matched, or the trip grew since (it was still going on)
         return True, (json.loads(row[2]) if row[2] else None)
 
+    def clear_routes(self) -> None:
+        with self.lock:
+            self.db.execute("DELETE FROM routes")
+            self.db.commit()
+
     def save_route(self, entity_id: str, trip: dict, geometry: list | None) -> None:
         with self.lock:
             self.db.execute(
