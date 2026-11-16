@@ -249,6 +249,16 @@ class HomeAssistant:
 
     # --- for the UI -------------------------------------------------------------
 
+    async def map_token(self) -> str:
+        """A short-lived token for Home Assistant's own map tiles (/api/map_tiles)."""
+        if not self._ws or not self.connected:
+            raise ConnectionError("not connected to Home Assistant")
+        result = await self.call({"type": "map_tiles/access_token"}, timeout=20)
+        token = (result or {}).get("token")
+        if not token:
+            raise RuntimeError("Home Assistant returned no map token")
+        return token
+
     def people(self) -> list[dict]:
         out = []
         for eid in self.tracked_entities():

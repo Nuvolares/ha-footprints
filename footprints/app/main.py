@@ -108,6 +108,17 @@ async def api_cells(request: web.Request) -> web.Response:
     return web.json_response({"entity_id": entity, "cell": cell, "cells": cells})
 
 
+async def api_map_token(request: web.Request) -> web.Response:
+    ha: HomeAssistant | None = request.app["ha"]
+    if ha is None:
+        return web.json_response({"error": "demo mode has no Home Assistant map"}, status=404)
+    try:
+        return web.json_response({"token": await ha.map_token()}, headers={"Cache-Control": "no-store"})
+    except (ConnectionError, RuntimeError, asyncio.TimeoutError) as err:
+        log.warning("Could not get a map token from Home Assistant: %s", err)
+        return web.json_response({"error": str(err)}, status=502)
+
+
 async def api_delete(request: web.Request) -> web.Response:
     entity = request.match_info["entity"]
     removed = await asyncio.to_thread(request.app["store"].delete_entity, entity)
@@ -156,6 +167,7 @@ def main() -> None:
     app.router.add_get("/api/config", api_config)
     app.router.add_get("/api/people", api_people)
     app.router.add_get("/api/cells", api_cells)
+    app.router.add_get("/api/map_token", api_map_token)
     app.router.add_delete("/api/history/{entity}", api_delete)
     app.router.add_static("/static", STATIC_DIR)
     app.on_startup.append(on_startup)

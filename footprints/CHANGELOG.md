@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.3
+
+- Use Home Assistant's own map (the same one as its Map dashboard) instead of
+  loading tiles from OpenStreetMap directly, which blocked the requests.
+
 ## 0.1.2
 
 - Fix the map showing "API Key Required": switch from CARTO (which now needs an

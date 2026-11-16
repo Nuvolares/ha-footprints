@@ -37,16 +37,64 @@
   const renderer = L.canvas({ padding: 0.5 });
   let tiles = null;
 
-  // OpenStreetMap's own tiles: free and no API key (CARTO's basemaps now require one).
-  // OSM has no dark style, so dark mode darkens the light tiles with a CSS filter.
-  function tileLayer(cfg) {
-    const osm = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
-    return L.tileLayer(cfg.tile_url || "https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: osm });
+  // The same map Home Assistant's own Map dashboard shows: core serves the tiles at
+  // /api/map_tiles (same origin as this page, which runs inside Home Assistant) and
+  // hands out a short-lived token through the "map_tiles/access_token" command.
+  const OSM_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+  const HA_TILES = "/api/map_tiles/raster/{z}/{x}/{y}.png?token={token}";
+
+  async function mapToken() {
+    // Ask through the signed-in user's own Home Assistant connection (the parent page)...
+    try {
+      const hc = window.parent && window.parent !== window && window.parent.hassConnection;
+      if (hc) {
+        const { conn } = await hc;
+        const res = await conn.sendMessagePromise({ type: "map_tiles/access_token" });
+        if (res && res.token) return res.token;
+      }
+    } catch { /* not reachable from here: fall back to the app's own connection */ }
+    // ...or through the app's connection to Home Assistant.
+    const res = await getJson("api/map_token");
+    return res.token;
   }
 
-  function setTiles(cfg) {
+  async function haTileLayer() {
+    const layer = L.tileLayer(HA_TILES, {
+      token: await mapToken(), maxZoom: 20, maxNativeZoom: 19, attribution: OSM_ATTRIBUTION,
+    });
+    let lastRefresh = Date.now();
+    layer.on("tileerror", async () => {
+      if (Date.now() - lastRefresh < 30000) return; // token expired? refresh at most every 30 s
+      lastRefresh = Date.now();
+      try {
+        layer.options.token = await mapToken();
+        layer.redraw();
+      } catch (err) {
+        setStatus(`Could not load the map: ${err.message}`, true);
+      }
+    });
+    return layer;
+  }
+
+  async function setTiles(cfg) {
+    let layer;
+    if (cfg.tile_url) {
+      layer = L.tileLayer(cfg.tile_url, { maxZoom: 19, attribution: OSM_ATTRIBUTION });
+    } else if (cfg.demo) {
+      layer = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19, attribution: OSM_ATTRIBUTION, referrerPolicy: "origin",
+      });
+    } else {
+      try {
+        layer = await haTileLayer();
+      } catch (err) {
+        setStatus(`Could not load the map from Home Assistant: ${err.message}`, true);
+        return;
+      }
+    }
     if (tiles) map.removeLayer(tiles);
-    tiles = tileLayer(cfg).addTo(map);
+    tiles = layer.addTo(map);
+    // The tiles are light; dark mode darkens them, like Home Assistant's dark map.
     const isDark = !cfg.tile_url && (cfg.map_style === "dark" || (cfg.map_style === "auto" && dark.matches));
     map.getContainer().classList.toggle("dark-tiles", isDark);
   }
@@ -368,7 +416,10 @@
     let cfg = { cell_size_m: 50, map_style: "auto", tile_url: "" };
     try { cfg = await getJson("api/config"); } catch (err) { setStatus(`Could not load settings: ${err.message}`, true); }
     setTiles(cfg);
-    dark.addEventListener("change", () => setTiles(cfg));
+    dark.addEventListener("change", () => {
+      const isDark = !cfg.tile_url && (cfg.map_style === "dark" || (cfg.map_style === "auto" && dark.matches));
+      map.getContainer().classList.toggle("dark-tiles", isDark);
+    });
     initControls(cfg);
     await refresh();
     setInterval(() => { if (!document.hidden) refresh(true); }, 60000);

@@ -48,7 +48,7 @@ faint.
 | `import_days` | 3650 | How far back to import from the recorder. |
 | `keep_days` | 0 | Delete points older than this. 0 keeps everything. |
 | `cell_size_m` | 50 | Default spot size on the map. |
-| `map_style` | auto | `auto` (follows light/dark mode), `light` or `dark`. The map is OpenStreetMap; dark mode darkens it. `osm` is the same as `light`. |
+| `map_style` | auto | `auto` (follows light/dark mode), `light` or `dark`. The map comes from Home Assistant itself, the same one its Map dashboard uses; dark mode darkens it. `osm` is the same as `light`. |
 | `tile_url` | — | Optional custom tile server, for example `https://tile.example.com/{z}/{x}/{y}.png`. |
 | `log_level` | info | How much detail the app writes to its log. |
 
@@ -67,9 +67,10 @@ faint.
 
 Location history is personal. Everything stays on your Home Assistant: the
 points are stored in the app's `/data` folder and are only reachable through
-Home Assistant's own login. The map tiles are loaded from OpenStreetMap (or
-your own tile server); the tile server sees which map area is being viewed,
-but never receives the recorded locations.
+Home Assistant's own login. The map background comes through Home Assistant's
+built-in map service, the same one its Map dashboard uses (or from your own
+tile server if you set `tile_url`). The map service sees which area is being
+viewed, but never receives the recorded locations.
 
 To delete one person's recorded history, hover over their name in the People
 list and select the trash icon. Uninstalling the app removes all of it. If the
