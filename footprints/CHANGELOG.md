@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.2
+
+- Fix new controls not working after an update (such as the blink setting not
+  sticking and nothing blinking): the browser kept using its saved copy of the
+  old app script. The page now always loads the current one.
+
 ## 0.5.1
 
 - Spot size can be 1 m or 10 m too (and `cell_size_m` can go down to 1).

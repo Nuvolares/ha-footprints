@@ -1,5 +1,6 @@
 """Footprints web server (served to Home Assistant through Ingress)."""
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -148,8 +149,34 @@ def time_window(request: web.Request) -> tuple[float, float | None]:
     return (0.0 if days is None else (time.time() // 3600) * 3600 - days * 86400), None
 
 
+def static_version() -> str:
+    """A fingerprint of the page's own files, so a browser never mixes old and new ones."""
+    h = hashlib.sha256()
+    for name in ("app.js", "style.css"):
+        h.update((STATIC_DIR / name).read_bytes())
+    return h.hexdigest()[:12]
+
+
+INDEX_HTML: str | None = None
+
+
 async def index(request: web.Request) -> web.StreamResponse:
-    return web.FileResponse(STATIC_DIR / "index.html", headers={"Cache-Control": "no-cache"})
+    global INDEX_HTML
+    if INDEX_HTML is None:
+        v = static_version()
+        INDEX_HTML = ((STATIC_DIR / "index.html").read_text(encoding="utf-8")
+                      .replace('src="static/app.js"', f'src="static/app.js?v={v}"')
+                      .replace('href="static/style.css"', f'href="static/style.css?v={v}"'))
+    return web.Response(text=INDEX_HTML, content_type="text/html", headers={"Cache-Control": "no-cache"})
+
+
+@web.middleware
+async def no_stale_static(request: web.Request, handler):
+    """Make the browser check its saved copy of the page's files with every load."""
+    response = await handler(request)
+    if request.path.startswith("/static/") and not request.path.startswith("/static/vendor/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
 
 
 async def api_config(request: web.Request) -> web.Response:
@@ -412,7 +439,7 @@ def main() -> None:
     logging.getLogger("aiohttp.access").setLevel(logging.WARNING)
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-    app = web.Application(middlewares=[access])
+    app = web.Application(middlewares=[access, no_stale_static])
     app["opts"] = opts
     app["store"] = Store(DATA_DIR / "footprints.db")
     app["rules"] = user_rules(opts, app["store"])
