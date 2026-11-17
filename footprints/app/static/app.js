@@ -293,6 +293,11 @@
       for (const c of state.cells[entity] || []) {
         if (!(c.longest >= state.blink * 3600)) continue;
         const r = radiusPx(c.lat);
+        // A ring that widens and fades with each blink, so long stops stand out on a busy map.
+        group.addLayer(L.circleMarker([c.lat, c.lon], {
+          renderer: blinkRenderer, radius: Math.max(r, 5) + 2, className: "stay-pulse", interactive: false,
+          color: p.color, weight: 3, opacity: 1, fill: false,
+        }));
         const mark = L.circleMarker([c.lat, c.lon], {
           renderer: blinkRenderer, radius: Math.max(r, 5), className: "stay-blink",
           color: p.color, weight: 3, opacity: 1, fillColor: p.color, fillOpacity: 0.85,

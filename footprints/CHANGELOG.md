@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.4
+
+- Long stays also send out a widening ring with each blink, so they stand out
+  among the routes and other dots.
+
 ## 0.5.3
 
 - The popup of a place shows when the longest stay and the last stay were:
