@@ -195,7 +195,7 @@ async def api_cells(request: web.Request) -> web.Response:
     store: Store = request.app["store"]
     entity = entity_param(request)
     start, end = time_window(request)
-    cell = number(request, "cell", request.app["opts"]["cell_size_m"], 10, 2000)
+    cell = number(request, "cell", request.app["opts"]["cell_size_m"], 1, 2000)
     min_stay = number(request, "min_stay", 0, 0, 24 * 60) * 60
     min_away = number(request, "min_away", 30, 0, 24 * 60) * 60
     cells = await asyncio.to_thread(store.cells, entity, start, end, cell, min_away, min_stay)

@@ -1,5 +1,5 @@
 name: Footprints
-version: "0.5.0"
+version: "0.5.1"
 slug: footprints
 description: >-
   A map of every place the people in your home have been. Places they keep
@@ -41,7 +41,7 @@ schema:
   max_accuracy_m: int(10,10000)
   import_days: int(1,36500)
   keep_days: int(0,36500)
-  cell_size_m: int(10,2000)
+  cell_size_m: int(1,2000)
   map_style: list(auto|light|dark|osm)
   tile_url: str?
   snap_to_roads: bool

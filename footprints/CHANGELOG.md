@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.1
+
+- Spot size can be 1 m or 10 m too (and `cell_size_m` can go down to 1).
+
 ## 0.5.0
 
 - Places where someone stayed longer than an hour in one go blink. Pick 1, 3

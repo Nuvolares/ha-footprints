@@ -60,8 +60,11 @@ direction of travel.
 - **Dead ends are left out**: a point the person went out to and came
   straight back from without stopping (a U-turn, or more often a GPS fix that
   landed off the road) doesn't get a dot, and the line doesn't go there.
-  Points on the way somewhere else, and places where they stayed, are kept.- **Spot size**: how close two positions must be to count as the same place.
-  Use a larger size when looking at a whole country.
+  Points on the way somewhere else, and places where they stayed, are kept.- **Spot size**: how close two positions must be to count as the same place,
+  from 1 m to 500 m. Use a larger size when looking at a whole country. At
+  1 m nearly every recorded position gets its own dot, because phone GPS is
+  usually only accurate to 5–20 m, so visits to the same place spread over
+  many dots.
 - **Map**: the background map. *Home Assistant map* is the same one as the Map
   dashboard. *OpenStreetMap*, *Satellite* (Esri World Imagery) and
   *Topographic* (OpenTopoMap) come straight from those services. A *Custom*
