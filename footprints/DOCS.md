@@ -52,7 +52,8 @@ direction of travel.
   fully solid. Lower it to make regular places stand out sooner.
 - **Blink where they stayed longer than**: places where someone stayed
   longer than 1 hour (or 3 or 8 hours) in one go blink, so long stops are easy
-  to spot. Select a place to see its longest stay. Choose *off* to stop the
+  to spot. Select a place to see its longest and its last stay, with the day
+  and the time they arrived and left. Choose *off* to stop the
   blinking. With *Reduce motion* turned on in your device settings, these places are
   shown solid instead of blinking.
 - **Count a visit after**: set it to 5 minutes or more to hide streets they

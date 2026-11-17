@@ -319,7 +319,7 @@ class Store:
         rows = drop_spikes(rows)
 
         dlat = cell_m / EARTH_M_PER_DEG
-        # cell -> [sum_lat, sum_lon, n, dwell, [time per visit], first, last]
+        # cell -> [sum_lat, sum_lon, n, dwell, [[start, time] per visit], first, last]
         cells: dict[tuple[int, int], list] = {}
         cur = None
         last_ts = 0.0
@@ -331,14 +331,14 @@ class Store:
                 gap = min(ts - last_ts, MAX_GAP)
                 c = cells[cur]
                 c[3] += gap
-                c[4][-1] += gap
+                c[4][-1][1] += gap
                 c[6] = max(c[6], last_ts + gap)
             c = cells.get(k)
             if c is None:
                 c = cells[k] = [0.0, 0.0, 0, 0.0, [], ts, ts]
             if k != cur:
                 if not c[4] or ts - c[6] > min_away_s:
-                    c[4].append(0.0)
+                    c[4].append([ts, 0.0])
                 cur = k
             c[0] += lat
             c[1] += lon
@@ -348,24 +348,33 @@ class Store:
 
         # The person is (probably) still at their last known spot: count the time up to now.
         now = time.time()
+        here = None  # the cell they are (probably) still at
         if cur is not None and (end is None or end > now):
             gap = min(now - last_ts, MAX_GAP)
             c = cells[cur]
             c[3] += gap
-            c[4][-1] += gap
+            c[4][-1][1] += gap
             c[6] = max(c[6], last_ts + gap)
+            if now - last_ts < MAX_GAP:
+                here = c
 
         out = []
         for c in cells.values():
-            stays = [v for v in c[4] if v >= min_stay_s]
+            stays = [v for v in c[4] if v[1] >= min_stay_s]
             if not stays:
                 continue
+            longest = max(stays, key=lambda v: v[1])
+            last = stays[-1]
             out.append({
                 "lat": round(c[0] / c[2], 6),
                 "lon": round(c[1] / c[2], 6),
                 "visits": len(stays),
                 "dwell": int(c[3]),
-                "longest": int(max(stays)),  # the longest single stay, for "stayed over an hour"
+                "longest": int(longest[1]),  # the longest single stay, for "stayed over an hour"
+                "longest_start": int(longest[0]),
+                "last_start": int(last[0]),
+                "last_stay": int(last[1]),
+                "still_here": c is here and last is c[4][-1],
                 "first": int(c[5]),
                 "last": int(c[6]),
             })

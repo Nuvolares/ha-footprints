@@ -340,6 +340,8 @@ select {
 .leaflet-popup-content { margin: 10px 14px; font-size: 13px; }
 .leaflet-popup-content b { font-weight: 600; }
 .leaflet-popup-content .pop-meta { color: var(--muted); }
+.pop-stay { display: grid; margin: 6px 0; }
+.pop-stay b { font-weight: 600; }
 .leaflet-bar a { background: var(--surface); color: var(--text); border-color: var(--border); }
 .leaflet-bar a:hover { background: var(--surface-2); }
 .leaflet-control-attribution { background: var(--surface) !important; color: var(--muted); }

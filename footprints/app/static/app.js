@@ -204,10 +204,46 @@
     return `<span class="avatar" style="--pc:${p.color}"${pic}>${p.picture ? "" : esc(initials(p.name))}</span>`;
   }
 
+  // "Today", "Yesterday", "Mon, Nov 12" (with the year when it isn't this year).
+  function dayLabel(ts) {
+    const d = new Date(ts * 1000);
+    const today = new Date();
+    const start = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+    const diff = Math.round((start(today) - start(d)) / 86400000);
+    if (diff === 0) return "Today";
+    if (diff === 1) return "Yesterday";
+    return d.toLocaleDateString([], {
+      weekday: "short", month: "short", day: "numeric",
+      ...(d.getFullYear() !== today.getFullYear() ? { year: "numeric" } : {}),
+    });
+  }
+
+  // When a stay was: "Mon, Nov 12 · 18:05 – 21:25", across midnight with both days.
+  function stayTimes(start, secs, ongoing) {
+    if (ongoing) return `${dayLabel(start)} · since ${clock(start)}`;
+    const end = start + secs;
+    return dayLabel(end) === dayLabel(start)
+      ? `${dayLabel(start)} · ${clock(start)} – ${clock(end)}`
+      : `${dayLabel(start)} ${clock(start)} – ${dayLabel(end)} ${clock(end)}`;
+  }
+
   function popupHtml(p, c) {
+    const stays = [];
+    if (c.longest_start !== undefined) {
+      const same = c.last_start === c.longest_start;
+      const stay = (label, start, secs, ongoing) =>
+        `<div class="pop-stay"><span>${label} <b>${duration(secs)}</b>${ongoing ? " · still there" : ""}</span>` +
+        `<span class="pop-meta">${esc(stayTimes(start, secs, ongoing))}</span></div>`;
+      if (same) {
+        stays.push(stay(c.visits === 1 ? "Stay" : "Longest and last stay", c.last_start, c.last_stay, c.still_here));
+      } else {
+        stays.push(stay("Longest stay", c.longest_start, c.longest, false));
+        stays.push(stay("Last stay", c.last_start, c.last_stay, c.still_here));
+      }
+    }
     return `<b>${esc(p.name)}</b><br>` +
       `${c.visits === 1 ? "1 visit" : `${c.visits} visits`} · ${duration(c.dwell)} in total<br>` +
-      (c.longest ? `Longest stay ${duration(c.longest)}<br>` : "") +
+      stays.join("") +
       `<span class="pop-meta">First ${when(c.first)} · last ${when(c.last)}</span>`;
   }
 

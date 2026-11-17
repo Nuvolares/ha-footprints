@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.3
+
+- The popup of a place shows when the longest stay and the last stay were:
+  the day and the time they arrived and left (or "still there").
+
 ## 0.5.2
 
 - Fix new controls not working after an update (such as the blink setting not
