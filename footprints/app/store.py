@@ -365,6 +365,7 @@ class Store:
                 "lon": round(c[1] / c[2], 6),
                 "visits": len(stays),
                 "dwell": int(c[3]),
+                "longest": int(max(stays)),  # the longest single stay, for "stayed over an hour"
                 "first": int(c[5]),
                 "last": int(c[6]),
             })

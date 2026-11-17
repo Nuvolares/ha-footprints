@@ -344,6 +344,9 @@ select {
 .leaflet-bar a:hover { background: var(--surface-2); }
 .leaflet-control-attribution { background: var(--surface) !important; color: var(--muted); }
 .leaflet-control-attribution a { color: var(--muted); }
+.stay-blink { animation: fp-blink 1.4s ease-in-out infinite; }
+@keyframes fp-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.12; } }
+@media (prefers-reduced-motion: reduce) { .stay-blink { animation: none; } }
 .now-marker .avatar { box-shadow: 0 0 0 3px var(--surface), var(--shadow); }
 
 @media (max-width: 600px) {

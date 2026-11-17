@@ -32,6 +32,7 @@
     mode: store.get("mode", "visits"),
     sat: store.get("sat", { visits: 20, time: 24 }),
     stay: store.get("stay", 0),
+    blink: store.get("blink", 1), // hours; 0 = off
     cell: store.get("cell", null),
     basemap: store.get("basemap", "ha"),
     showRoutes: store.get("routes2", true), // "routes2": 0.3.0 shows routes by default, also for earlier viewers
@@ -51,6 +52,7 @@
   map.createPane("routes").style.zIndex = 390; // under the dots
   const renderer = L.canvas({ padding: 0.5 });
   const routeRenderer = L.canvas({ padding: 0.5, pane: "routes" });
+  const blinkRenderer = L.svg({ padding: 0.5 }); // SVG, so the long stays can blink with CSS
   const arrowLayer = L.layerGroup().addTo(map);
   let tiles = null;
 
@@ -205,6 +207,7 @@
   function popupHtml(p, c) {
     return `<b>${esc(p.name)}</b><br>` +
       `${c.visits === 1 ? "1 visit" : `${c.visits} visits`} · ${duration(c.dwell)} in total<br>` +
+      (c.longest ? `Longest stay ${duration(c.longest)}<br>` : "") +
       `<span class="pop-meta">First ${when(c.first)} · last ${when(c.last)}</span>`;
   }
 
@@ -248,6 +251,19 @@
       });
       dot.bindPopup(() => popupHtml(p, c));
       group.addLayer(dot);
+    }
+    // Places where they stayed longer than the chosen time in one go blink, drawn on top.
+    if (state.blink) {
+      for (const c of state.cells[entity] || []) {
+        if (!(c.longest >= state.blink * 3600)) continue;
+        const r = radiusPx(c.lat);
+        const mark = L.circleMarker([c.lat, c.lon], {
+          renderer: blinkRenderer, radius: Math.max(r, 5), className: "stay-blink",
+          color: p.color, weight: 3, opacity: 1, fillColor: p.color, fillOpacity: 0.85,
+        });
+        mark.bindPopup(() => popupHtml(p, c));
+        group.addLayer(mark);
+      }
     }
     group.addTo(map);
     state.layers[entity] = group;
@@ -577,6 +593,13 @@
     }
     cellSel.value = state.cell;
     cellSel.addEventListener("change", () => { state.cell = +cellSel.value; store.set("cell", state.cell); reload(); });
+
+    $("blink").value = state.blink;
+    $("blink").addEventListener("change", () => {
+      state.blink = +$("blink").value;
+      store.set("blink", state.blink);
+      for (const p of state.people) draw(p.entity_id);
+    });
 
     $("stay").value = state.stay;
     $("stay").addEventListener("change", () => {

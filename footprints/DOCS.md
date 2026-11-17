@@ -50,6 +50,11 @@ direction of travel.
   (how long they were there in total).
 - **Solid after**: how many visits (or hours) it takes for a dot to become
   fully solid. Lower it to make regular places stand out sooner.
+- **Blink where they stayed longer than**: places where someone stayed
+  longer than 1 hour (or 3 or 8 hours) in one go blink, so long stops are easy
+  to spot. Select a place to see its longest stay. Choose *off* to stop the
+  blinking. With *Reduce motion* turned on in your device settings, these places are
+  shown solid instead of blinking.
 - **Count a visit after**: set it to 5 minutes or more to hide streets they
   only drove through and show only places where they stopped.
 - **Dead ends are left out**: a point the person went out to and came

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.0
+
+- Places where someone stayed longer than an hour in one go blink. Pick 1, 3
+  or 8 hours, or off, under **Blink where they stayed longer than**. The
+  popup of a place now shows its longest stay.
+
 ## 0.4.1
 
 - The Configuration tab now points to the Settings gear in the app, which
